@@ -1,0 +1,2 @@
+Model,Optimization Time (s),Retraining Time (s),Best Params,Train R2,Train MSE,Train MAPE (%),Test R2,Test MSE,Test MAPE (%),NNR_Epochs,NNR_Batch_Size
+LinearRegression,0,0.009,{},0.7784847070155994,1216.438316727811,9.424244743062008,0.5603321122389573,2658.878705058159,16.94947398401213,,
