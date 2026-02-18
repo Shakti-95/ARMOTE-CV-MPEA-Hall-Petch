@@ -1,6 +1,6 @@
 # ARMOTE: Automated Regression workflow with Multi-Objective hyperparameter optimization using Tree-Parzen Estimator algorithm
 #
-# Version: 1.1.0
+# Version: 1.0.0
 # Author: Shakti P. Padhy
 # Date: 2023-11-06
 #
@@ -155,8 +155,11 @@ def plot_yy(
     y_test_list,
     y_pred_test_list,
     model_name,
+    output_name,
     train_metrics,
     test_metrics,
+    cv,
+    colors,
     save_folder="plots",
 ):
     """
@@ -169,6 +172,8 @@ def plot_yy(
         y_pred_test_list (list): A list of 1D arrays, where each array is the predicted test targets from a fold.
         model_name (str): The name of the model for the plot title.
         train_metrics, test_metrics (tuple): Tuples of (R², MSE, MAPE) for train/test sets.
+        cv (int): The number of folds for cross-validation.
+        colors (list): A list of colors to use for the folds.
         save_folder (str): The directory where the plot image will be saved.
     """
     with plt.style.context("default"):
@@ -176,11 +181,7 @@ def plot_yy(
         plt.figure(figsize=(14, 6))
         train_r2, train_mse, train_mape = train_metrics
         test_r2, test_mse, test_mape = test_metrics
-
-        # Define 5 distinct colors for the folds
-        # Using Tableau 10 color palette
-        colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
-        n_folds = len(y_train_list)
+        n_folds = cv
 
         ## --- Training Data Subplot (All Folds) ---
         ax1 = plt.subplot(121)
@@ -210,7 +211,7 @@ def plot_yy(
         ax1.set_xlabel("True Values", fontsize=16)
         ax1.set_ylabel("Predicted Values", fontsize=16)
         ax1.set_title(
-            f"{model_name} Y-Y Plot - Train (All Folds)\nAvg R²: {train_r2:.3f} | Avg MSE: {train_mse:.6f} | Avg MAPE: {train_mape:.2f}%",
+            f"{model_name} Y-Y Plot - {output_name} - Train (All Folds)\nAvg R²: {train_r2:.3f} | Avg MSE: {train_mse:.6f} | Avg MAPE: {train_mape:.2f}%",
             fontsize=14,
         )
         ax1.legend()
@@ -243,23 +244,24 @@ def plot_yy(
         ax2.set_xlabel("True Values", fontsize=16)
         ax2.set_ylabel("Predicted Values", fontsize=16)
         ax2.set_title(
-            f"{model_name} Y-Y Plot - Test (Out-of-Fold)\nAvg R²: {test_r2:.3f} | Avg MSE: {test_mse:.6f} | Avg MAPE: {test_mape:.2f}%",
+            f"{model_name} Y-Y Plot - {output_name} - Test (Out-of-Fold)\nAvg R²: {test_r2:.3f} | Avg MSE: {test_mse:.6f} | Avg MAPE: {test_mape:.2f}%",
             fontsize=14,
         )
         ax2.legend()
 
         plt.tight_layout()
-        plt.savefig(os.path.join(save_folder, f"{model_name}_yy_plot_CV.png"))
+        plt.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_yy_plot_{cv}_fold_CV.png"))
         plt.show()
 
 
-def generate_optuna_plots(study, model_name, save_folder="plots"):
+def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots"):
     """
     Generates and saves key Optuna visualization plots as static PNG files.
 
     Args:
         study (optuna.study.Study): The completed Optuna study object.
         model_name (str): The name of the model for file naming.
+        cv (int): The number of folds for cross-validation.
         save_folder (str): The directory where plot images will be saved.
     """
     try:
@@ -281,7 +283,7 @@ def generate_optuna_plots(study, model_name, save_folder="plots"):
     ax = vis.plot_pareto_front(study, target_names=["MSE", "R-squared"])
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_pareto_front.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_pareto_front_{cv}_fold_CV.png"))
     plt.close(fig)
 
     # 2. Optimization History (MSE)
@@ -290,7 +292,7 @@ def generate_optuna_plots(study, model_name, save_folder="plots"):
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_optimization_history_mse.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_mse_{cv}_fold_CV.png"))
     plt.close(fig)
 
     # 3. Optimization History (R-squared)
@@ -299,7 +301,7 @@ def generate_optuna_plots(study, model_name, save_folder="plots"):
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_optimization_history_r2.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_r2_{cv}_fold_CV.png"))
     plt.close(fig)
 
     # 4. Parameter Importances (Combined for MSE and R-squared)
@@ -307,7 +309,7 @@ def generate_optuna_plots(study, model_name, save_folder="plots"):
     fig = ax.figure
     fig.tight_layout()
     fig.savefig(
-        os.path.join(save_folder, f"{model_name}_param_importances_combined.png")
+        os.path.join(save_folder, f"{model_name}_{output_name}_param_importances_combined_{cv}_fold_CV.png")
     )
     plt.close(fig)
 
@@ -317,10 +319,10 @@ def generate_optuna_plots(study, model_name, save_folder="plots"):
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_duration_importances.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_duration_importances_{cv}_fold_CV.png"))
     plt.close(fig)
 
-    print(f"Optuna plots for {model_name} saved as PNGs in '{save_folder}' directory.")
+    print(f"Optuna plots for {model_name} for {output_name} saved as PNGs in '{save_folder}' directory.")
 
 
 # --- 4. Main Workflow Functions ---
@@ -329,6 +331,7 @@ def find_best_hyperparameters(
     param_space,
     X,
     y,
+    cv=5,
     is_nn=False,
     is_gpr=False,
     gpr_kernel_map=None,
@@ -342,6 +345,7 @@ def find_best_hyperparameters(
         model: An unfitted scikit-learn model or None for neural networks.
         param_space (dict): The hyperparameter search space for Optuna.
         X, y: The full feature and target datasets.
+        cv (int): The number of folds for cross-validation.
         is_nn (bool): A flag to handle neural network logic separately.
         is_gpr (bool): A flag to handle Gaussian Process Regressor logic separately.
         gpr_kernel_map (dict): A mapping of kernel names to kernel objects for GPR.
@@ -390,6 +394,7 @@ def find_best_hyperparameters(
                 y_scaled,
                 create_nn,
                 params,
+                cv=cv,
                 epochs=nn_epochs,
                 batch_size=nn_batch_size,
             )
@@ -406,7 +411,7 @@ def find_best_hyperparameters(
                 current_model,
                 X_scaled,
                 y_scaled.ravel(),
-                cv=5,
+                cv=cv,
                 scoring=scoring,
                 n_jobs=-1,
             )
@@ -421,7 +426,8 @@ def find_best_hyperparameters(
             "Using n_jobs=1 for GaussianProcessRegressor to manage high memory usage."
         )
 
-    study = optuna.create_study(directions=["minimize", "maximize"])
+    sampler = optuna.samplers.TPESampler(seed=42)
+    study = optuna.create_study(sampler=sampler, directions=["minimize", "maximize"])
     start_time = time.time()
 
     study.optimize(
@@ -450,15 +456,18 @@ def run_workflow(
     y,
     models,
     param_spaces,
-    output_name="workflow_output",
+    cv=5,
+    output_name='Objective 1',
+    output_folder_name="workflow_output",
     gpr_kernel_map=None,
     nn_epochs=100,
     nn_batch_size=32,
+    colors = ['#EE6677', '#228833', '#4477AA', '#CCBB44', '#66CCEE'],
 ):
     """
     Executes the end-to-end multi-objective machine learning workflow.
     1. Finds best hyperparameters using Optuna on 100% of the data.
-    2. Performs a 5-fold CV using those best hyperparameters for final evaluation.
+    2. Performs a k-fold CV using those best hyperparameters for final evaluation.
     3. Saves the model and scalers from every fold.
 
     Args:
@@ -466,20 +475,22 @@ def run_workflow(
         y (pd.Series or np.array): The complete target dataset.
         models (dict): A dictionary of model names to their unfitted instances.
         param_spaces (dict): A dictionary of model names to their hyperparameter search spaces.
-        output_base_name (str): The base name for output files and folders.
+        output_name (str): The name of the output.
+        output_folder_name (str): The base name for output files and folders.
         gpr_kernel_map (dict, optional): A map of strings to GPR kernel objects.
         nn_epochs, nn_batch_size (int): Number of epochs and batch size for NN training
         during cross-validation.
+        colors (list): A list of colors for plotting.
 
     Returns:
         pd.DataFrame: A DataFrame summarizing the performance and timings of all models.
     """
     # --- 1. Setup and Data Preparation ---
     # Print the output name
-    print(f"Initializing Pre-Optimization CV workflow for target: '{output_name}'...")
+    print(f"Initializing Pre-Optimization CV workflow for target: '{output_folder_name}'...")
 
     # Define dynamic paths based on the output_name
-    base_dir = output_name
+    base_dir = output_folder_name
     models_dir = os.path.join(base_dir, "models")
     plots_dir = os.path.join(base_dir, "plots")
     studies_dir = os.path.join(base_dir, "studies")
@@ -507,7 +518,7 @@ def run_workflow(
 
     # --- 2. Model Training and Evaluation Loop ---
     results = []
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    kf = KFold(n_splits=cv, shuffle=True, random_state=42)
 
     for name, model in models.items():
         print(f"\n--- Starting Workflow for: {name} ---")
@@ -540,6 +551,7 @@ def run_workflow(
             param_spaces.get(name, {}),
             X,
             y_numpy,
+            cv=cv,
             is_nn=is_nn,
             is_gpr=is_gpr,
             gpr_kernel_map=gpr_kernel_map,
@@ -549,14 +561,14 @@ def run_workflow(
 
         # Save optimization artifacts
         if study:
-            study_path = os.path.join(studies_dir, f"{name}_study.pkl")
+            study_path = os.path.join(studies_dir, f"{name}_{output_name}_study.pkl")
             joblib.dump(study, study_path)
             print(f"Optuna study saved to: {study_path}")
-            generate_optuna_plots(study, name, save_folder=plots_dir)
+            generate_optuna_plots(study, name, cv, output_name, save_folder=plots_dir)
 
-        # === PART 2: 5-FOLD CV FINAL EVALUATION ===
+        # === PART 2: k-FOLD CV FINAL EVALUATION ===
         print(
-            f"\n--- {name} - Step 2: 5-Fold CV Final Evaluation (using best params) ---"
+            f"\n--- {name} - Step 2: {cv}-Fold CV Final Evaluation (using best params) ---"
         )
 
         # Lists to store results from each fold
@@ -571,7 +583,7 @@ def run_workflow(
         all_train_y_pred = []
 
         for fold, (train_idx, test_idx) in enumerate(kf.split(X, y)):
-            print(f"\n--- {name} - Evaluation Fold {fold + 1}/5 ---")
+            print(f"\n--- {name} - Evaluation Fold {fold + 1}/{cv} ---")
 
             # Get data for this fold
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
@@ -594,13 +606,13 @@ def run_workflow(
 
             # Save scalers for every fold
             joblib.dump(
-                x_scaler, os.path.join(models_dir, f"{name}_x_scaler_fold_{fold}.pkl")
+                x_scaler, os.path.join(models_dir, f"{name}_{output_name}_x_scaler_fold_{fold}.pkl")
             )
             joblib.dump(
-                y_scaler, os.path.join(models_dir, f"{name}_y_scaler_fold_{fold}.pkl")
+                y_scaler, os.path.join(models_dir, f"{name}_{output_name}_y_scaler_fold_{fold}.pkl")
             )
             print(
-                f"{name}_x_scaler_fold_{fold}.pkl and {name}_y_scaler_fold_{fold}.pkl saved in '{models_dir}'."
+                f"{name}_{output_name}_x_scaler_fold_{fold}.pkl and {name}_{output_name}_y_scaler_fold_{fold}.pkl saved in '{models_dir}'."
             )
 
             # --- 5. Train and Time the Final Model (per-fold) ---
@@ -663,16 +675,16 @@ def run_workflow(
             print(f"Saving model for {name} from Fold {fold}...")
             model_path = os.path.join(
                 models_dir,
-                f"{name}_best_model_fold_{fold}.{'keras' if name == 'NNR' else 'pkl'}",
+                f"{name}_{output_name}_best_model_fold_{fold}.{'keras' if name == 'NNR' else 'pkl'}",
             )
             if name == "NNR":
                 final_model.save(model_path)
             else:
                 joblib.dump(final_model, model_path)
-            print(f"Best model (Fold {fold}) saved to: {model_path}")
+            print(f"Best model for {name} for {output_name} (Fold {fold}) saved to: {model_path}")
 
         # --- 9. Collate Results After All Folds ---
-        print(f"\n--- Aggregating 5-Fold CV results for: {name} ---")
+        print(f"\n--- Aggregating {cv}-Fold CV results for: {name} for {output_name} ---")
 
         # Calculate average metrics and times
         train_metrics_df = pd.DataFrame(
@@ -693,8 +705,11 @@ def run_workflow(
             oof_y_true,
             oof_y_pred,
             name,
+            output_name,
             avg_train_metrics,
             avg_test_metrics,
+            cv,
+            colors,
             save_folder=plots_dir,
         )
 
@@ -724,8 +739,8 @@ def run_workflow(
 
     # --- 10. Final Summary ---
     results_df = pd.DataFrame(results)
-    results_csv_path = os.path.join(base_dir, "results_5_fold_CV.csv")
+    results_csv_path = os.path.join(base_dir, f"{output_name}_results_{cv}_fold_CV.csv")
     results_df.to_csv(results_csv_path, index=False)
     print("\n--- Workflow Complete ---")
-    print(f"Final 5-fold CV results summary saved to {results_csv_path}")
+    print(f"Final {cv}-fold CV results summary for {output_name} saved to {results_csv_path}")
     return results_df
