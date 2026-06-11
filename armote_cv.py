@@ -26,7 +26,9 @@
 
 # --- 1. Imports ---
 # Core libraries for data manipulation, file operations, numerical processing, and timing.
+import json
 import os
+import copy
 import numpy as np
 import pandas as pd
 import joblib
@@ -35,24 +37,21 @@ import matplotlib.pyplot as plt
 
 # Scikit-learn modules for modeling, metrics, and data preprocessing.
 from sklearn.model_selection import train_test_split, KFold, cross_validate
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_percentage_error
 from sklearn.gaussian_process.kernels import RBF
 
-# Keras (TensorFlow backend) for building the neural network.
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.optimizers import Adam
-from keras import backend as K
+# Keras via TensorFlow backend.
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import backend as K
 
 # Optuna for advanced hyperparameter optimization.
 import optuna
+from tqdm import tqdm
 
-
-# --- 2. Global Variables ---
-# Define global scalers to ensure consistent data transformation across the entire workflow.
-x_scaler = StandardScaler()
-y_scaler = StandardScaler()
 
 
 # --- 3. Core Helper Functions ---
@@ -75,7 +74,7 @@ def compute_metrics(y_true, y_pred):
     return r2, mse, mape
 
 
-def create_nn(hidden_layers=1, units=64, activation="relu", learning_rate=0.001):
+def create_nn(hidden_layers=1, units=64, activation="relu", learning_rate=0.001, input_dim=None, output_dim=1):
     """
     Creates, configures, and compiles a Keras Sequential neural network for regression
     where the number of units is halved in each subsequent hidden layer.
@@ -85,12 +84,12 @@ def create_nn(hidden_layers=1, units=64, activation="relu", learning_rate=0.001)
         units (int): The number of neurons in each hidden layer.
         activation (str): The activation function for hidden layers.
         learning_rate (float): The learning rate for the Adam optimizer.
+        input_dim (int): Number of input features.
+        output_dim (int): Number of output targets.
 
     Returns:
         keras.Model: A compiled Keras model instance ready for training.
     """
-    input_dim = x_scaler.n_features_in_
-    output_dim = y_scaler.n_features_in_
     # --- Model Creation ---
     model = Sequential()
 
@@ -122,27 +121,42 @@ def create_nn(hidden_layers=1, units=64, activation="relu", learning_rate=0.001)
     return model
 
 
-def cross_val_nn(X, y, build_fn, params, cv=5, epochs=100, batch_size=8):
+def cross_val_nn(X, y, build_fn, params, cv=5, epochs=100, batch_size=8,
+                 refit_scaler_per_fold=True, cv_random_state=42):
     """
     Performs manual K-Fold cross-validation for a Keras model for multi-objective evaluation.
 
     Args:
-        X (np.array): The scaled feature data.
-        y (np.array): The scaled target data.
+        X (np.array): Feature data. Raw when refit_scaler_per_fold=True, pre-scaled when False.
+        y (np.array): Target data. Raw when refit_scaler_per_fold=True, pre-scaled when False.
         build_fn (function): The function used to construct the Keras model.
         params (dict): The dictionary of hyperparameters to pass to the `build_fn`.
         cv (int): The number of folds for cross-validation.
+        refit_scaler_per_fold (bool): If True, fit StandardScaler on each fold's training
+            data only, eliminating intra-CV scaler leakage.
+        cv_random_state (int): Random seed for KFold shuffling.
 
     Returns:
         tuple: Mean MSE (objective 1) and mean R-squared (objective 2) across all folds.
     """
-    kf = KFold(n_splits=cv, shuffle=True, random_state=42)
+    kf = KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+    input_dim = X.shape[1]
+    output_dim = y.shape[1] if y.ndim > 1 else 1
     r2_scores, mse_scores = [], []
     for train_idx, val_idx in kf.split(X):
-        X_train, X_val = X[train_idx], X[val_idx]
-        y_train, y_val = y[train_idx], y[val_idx]
-        model = build_fn(**params)
-        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+        X_tr, X_val = X[train_idx], X[val_idx]
+        y_tr, y_val = y[train_idx], y[val_idx]
+
+        if refit_scaler_per_fold:
+            fold_xsc = StandardScaler().fit(X_tr)
+            fold_ysc = StandardScaler().fit(y_tr.reshape(-1, 1))
+            X_tr  = fold_xsc.transform(X_tr)
+            X_val = fold_xsc.transform(X_val)
+            y_tr  = fold_ysc.transform(y_tr.reshape(-1, 1))
+            y_val = fold_ysc.transform(y_val.reshape(-1, 1))
+
+        model = build_fn(**params, input_dim=input_dim, output_dim=output_dim)
+        model.fit(X_tr, y_tr, epochs=epochs, batch_size=batch_size, verbose=0)
         y_pred_val = model.predict(X_val)
         r2_scores.append(r2_score(y_val, y_pred_val))
         mse_scores.append(mean_squared_error(y_val, y_pred_val))
@@ -178,7 +192,7 @@ def plot_yy(
     """
     with plt.style.context("default"):
         os.makedirs(save_folder, exist_ok=True)
-        plt.figure(figsize=(14, 6))
+        fig = plt.figure(figsize=(14, 6))
         train_r2, train_mse, train_mape = train_metrics
         test_r2, test_mse, test_mape = test_metrics
         n_folds = cv
@@ -250,8 +264,8 @@ def plot_yy(
         ax2.legend()
 
         plt.tight_layout()
-        plt.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_yy_plot_{cv}_fold_CV.png"))
-        plt.show()
+        fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_yy_plot_{cv}_fold_CV.png"))
+        plt.close(fig)
 
 
 def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots"):
@@ -331,34 +345,50 @@ def find_best_hyperparameters(
     param_space,
     X,
     y,
+    x_scaler,
+    y_scaler,
     cv=5,
     is_nn=False,
     is_gpr=False,
     gpr_kernel_map=None,
     nn_epochs=100,
     nn_batch_size=32,
+    refit_scaler_per_fold=True,
+    n_trials=100,
+    cv_random_state=42,
 ):
     """
     Performs multi-objective optimization using Optuna on the entire dataset.
+
+    NOTE: Optimization-phase MSE values (Pareto front, printed output) are in
+    SCALED space. Final evaluation MSE reported by run_workflow is in original units.
+    R² is scale-invariant and comparable across both phases.
 
     Args:
         model: An unfitted scikit-learn model or None for neural networks.
         param_space (dict): The hyperparameter search space for Optuna.
         X, y: The full feature and target datasets.
+        x_scaler, y_scaler: Already-fitted StandardScaler instances (used only when
+            refit_scaler_per_fold=False).
         cv (int): The number of folds for cross-validation.
         is_nn (bool): A flag to handle neural network logic separately.
         is_gpr (bool): A flag to handle Gaussian Process Regressor logic separately.
         gpr_kernel_map (dict): A mapping of kernel names to kernel objects for GPR.
         nn_epochs, nn_batch_size (int): Number of epochs and batch size for NN training
-        during cross-validation.
+            during cross-validation.
+        refit_scaler_per_fold (bool): If True, fit a new StandardScaler per CV fold inside
+            the optimization objective (sklearn: via Pipeline; NN: manually). Eliminates
+            intra-CV scaler leakage. If False, uses the pre-fitted x_scaler/y_scaler.
+        n_trials (int): Number of Optuna trials to run.
+        cv_random_state (int): Random seed for KFold shuffling in cross-validation.
 
     Returns:
-        tuple: Contains best parameters, metrics, predictions, the final model, the study,
-               and the computational times for optimization and retraining.
+        tuple: Contains best parameters, the Optuna study, and the optimization time.
     """
-    # --- 1. Transform Data ---
-    X_scaled = x_scaler.transform(X)
-    y_scaled = y_scaler.transform(y.reshape(-1, 1))
+    # --- 1. Pre-scale data (only needed when refit_scaler_per_fold=False) ---
+    if not refit_scaler_per_fold:
+        X_scaled = x_scaler.transform(X)
+        y_scaled = y_scaler.transform(y.reshape(-1, 1))
 
     # Handle GPR kernel mapping requirement
     final_kernel_map = gpr_kernel_map
@@ -371,7 +401,6 @@ def find_best_hyperparameters(
     # --- 2. Handle Models Without Hyperparameter Tuning ---
     if not param_space:
         print("No hyperparameters defined. Returning default settings.")
-        # Return empty params, no study, and zero time
         return ({}, None, 0)
 
     # --- 3. Define the Multi-Objective Function for Optuna ---
@@ -387,34 +416,41 @@ def find_best_hyperparameters(
             elif definition[0] == "categorical":
                 params[name] = trial.suggest_categorical(name, definition[1])
 
+        cv_splitter = KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+
         if is_nn:
             K.clear_session()
-            return cross_val_nn(
-                X_scaled,
-                y_scaled,
-                create_nn,
-                params,
-                cv=cv,
-                epochs=nn_epochs,
-                batch_size=nn_batch_size,
-            )
+            if refit_scaler_per_fold:
+                return cross_val_nn(
+                    X, y, create_nn, params,
+                    cv=cv, epochs=nn_epochs, batch_size=nn_batch_size,
+                    refit_scaler_per_fold=True, cv_random_state=cv_random_state,
+                )
+            else:
+                return cross_val_nn(
+                    X_scaled, y_scaled, create_nn, params,
+                    cv=cv, epochs=nn_epochs, batch_size=nn_batch_size,
+                    refit_scaler_per_fold=False, cv_random_state=cv_random_state,
+                )
         else:
-            current_model = model
+            # Resolve GPR kernel string → object without mutating trial params
             if is_gpr and "kernel" in params:
-                kernel_name = params.pop("kernel")
-                params["kernel"] = final_kernel_map[kernel_name]
-
-            current_model.set_params(**params)
+                resolved_params = {**params, "kernel": final_kernel_map[params["kernel"]]}
+            else:
+                resolved_params = params
 
             scoring = {"r2": "r2", "neg_mse": "neg_mean_squared_error"}
-            scores = cross_validate(
-                current_model,
-                X_scaled,
-                y_scaled.ravel(),
-                cv=cv,
-                scoring=scoring,
-                n_jobs=-1,
-            )
+            if refit_scaler_per_fold:
+                model_clone = copy.deepcopy(model)
+                pipe = Pipeline([("scaler", StandardScaler()), ("model", model_clone)])
+                pipe.set_params(**{f"model__{k}": v for k, v in resolved_params.items()})
+                scores = cross_validate(pipe, X, y.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=-1)
+            else:
+                model_clone = copy.deepcopy(model)
+                model_clone.set_params(**resolved_params)
+                scores = cross_validate(
+                    model_clone, X_scaled, y_scaled.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=-1,
+                )
             return -np.mean(scores["test_neg_mse"]), np.mean(scores["test_r2"])
 
     # --- 4. Run and Time the Optuna Optimization Study ---
@@ -431,7 +467,7 @@ def find_best_hyperparameters(
     start_time = time.time()
 
     study.optimize(
-        objective, n_trials=100, n_jobs=n_parallel_jobs, show_progress_bar=True
+        objective, n_trials=n_trials, n_jobs=n_parallel_jobs, show_progress_bar=True
     )
     optimization_time = time.time() - start_time
     print(f"Hyperparameter optimization completed in {optimization_time:.3f} seconds.")
@@ -441,7 +477,7 @@ def find_best_hyperparameters(
     best_trial = max(study.best_trials, key=lambda t: t.values[1])
     best_params = best_trial.params
     print(
-        f"Selected Trial #{best_trial.number} with MSE={best_trial.values[0]:.4f}, R2={best_trial.values[1]:.4f}"
+        f"Selected Trial #{best_trial.number} with MSE={best_trial.values[0]:.4f} (scaled space), R2={best_trial.values[1]:.4f}"
     )
 
     return (
@@ -463,6 +499,11 @@ def run_workflow(
     nn_epochs=100,
     nn_batch_size=32,
     colors = ['#EE6677', '#228833', '#4477AA', '#CCBB44', '#66CCEE'],
+    refit_scaler_per_fold=True,
+    n_trials=100,
+    cv_random_state=42,
+    nn_model_names=("NNR",),
+    gpr_model_names=("GPR",),
 ):
     """
     Executes the end-to-end multi-objective machine learning workflow.
@@ -474,17 +515,56 @@ def run_workflow(
         X (pd.DataFrame or np.array): The complete feature dataset.
         y (pd.Series or np.array): The complete target dataset.
         models (dict): A dictionary of model names to their unfitted instances.
-        param_spaces (dict): A dictionary of model names to their hyperparameter search spaces.
-        output_name (str): The name of the output.
-        output_folder_name (str): The base name for output files and folders.
-        gpr_kernel_map (dict, optional): A map of strings to GPR kernel objects.
-        nn_epochs, nn_batch_size (int): Number of epochs and batch size for NN training
-        during cross-validation.
-        colors (list): A list of colors for plotting.
+        param_spaces (dict): A dictionary mapping model names to hyperparameter search
+            spaces. Each space is a dict of {param_name: definition} where definition is
+            a tuple in one of these formats:
+                ("int",   low, high)               — integer range
+                ("float", low, high)               — float range
+                ("float", low, high, "log")        — log-scale float range
+                ("categorical", [val1, val2, ...]) — discrete choices
+            Example::
+
+                param_spaces = {
+                    "RF": {
+                        "n_estimators": ("int", 50, 500),
+                        "max_depth":    ("int", 3, 20),
+                        "min_samples_split": ("float", 0.01, 0.5),
+                    },
+                    "GPR": {
+                        "kernel": ("categorical", ["RBF", "Matern"]),
+                        "alpha":  ("float", 1e-6, 1e-1, "log"),
+                    },
+                }
+
+        output_name (str): Name of the target variable; used in file/plot names.
+        output_folder_name (str): Root directory for all saved outputs.
+        gpr_kernel_map (dict, optional): Maps kernel name strings to kernel objects,
+            required when "kernel" is in the GPR param space. Example::
+
+                from sklearn.gaussian_process.kernels import RBF, Matern
+                gpr_kernel_map = {"RBF": RBF(1.0), "Matern": Matern(nu=1.5)}
+
+        nn_epochs, nn_batch_size (int): Training epochs and batch size for NNR.
+        colors (list): Fold colors for Y-Y plots.
+        refit_scaler_per_fold (bool): If True (default), fit a new StandardScaler on each
+            fold's training data inside the optimization CV, eliminating intra-CV scaler
+            leakage. If False, scalers are fit on 100% of the data (original behavior).
+        n_trials (int): Number of Optuna hyperparameter search trials (default 100).
+        cv_random_state (int): Random seed for all KFold splits (default 42).
+        nn_model_names (tuple): Model dict keys treated as Keras NNs (default ("NNR",)).
+        gpr_model_names (tuple): Model dict keys treated as GPRs (default ("GPR",)).
 
     Returns:
-        pd.DataFrame: A DataFrame summarizing the performance and timings of all models.
+        pd.DataFrame: Summary of performance metrics and timings for all models.
     """
+    # --- 0. Input Validation ---
+    if len(X) != len(y):
+        raise ValueError(f"X has {len(X)} samples but y has {len(y)}.")
+    if cv < 2:
+        raise ValueError(f"cv must be >= 2, got {cv}.")
+    if len(colors) == 0:
+        raise ValueError("colors list must not be empty.")
+
     # --- 1. Setup and Data Preparation ---
     # Print the output name
     print(f"Initializing Pre-Optimization CV workflow for target: '{output_folder_name}'...")
@@ -518,26 +598,27 @@ def run_workflow(
 
     # --- 2. Model Training and Evaluation Loop ---
     results = []
-    kf = KFold(n_splits=cv, shuffle=True, random_state=42)
+    kf = KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
 
-    for name, model in models.items():
+    model_pbar = tqdm(models.items(), total=len(models), desc="Models", unit="model")
+    for name, model in model_pbar:
+        model_pbar.set_description(f"Model: {name}")
         print(f"\n--- Starting Workflow for: {name} ---")
 
         # Flags for model-specific handling
-        is_nn = name == "NNR"
-        is_gpr = name == "GPR"
+        is_nn = name in nn_model_names
+        is_gpr = name in gpr_model_names
 
         # === PART 1: GLOBAL OPTIMIZATION ===
         print(f"\n--- {name} - Step 1: Finding Best Hyperparameters (on 100% data) ---")
 
-        # Fit global scalers on 100% of data for optimization step
-        global x_scaler, y_scaler
+        # Fit scalers on 100% of data for the optimization step
         x_scaler = StandardScaler()
         y_scaler = StandardScaler()
         x_scaler.fit(X)
         y_scaler.fit(y_numpy.reshape(-1, 1))
 
-        # Save these "global" scalers
+        # Save the optimization-phase scalers (fit on 100% of data)
         joblib.dump(x_scaler, os.path.join(models_dir, "x_scaler_global_opt.pkl"))
         joblib.dump(y_scaler, os.path.join(models_dir, "y_scaler_global_opt.pkl"))
         print(f"Scalers (fit on 100% data) saved in '{models_dir}'.")
@@ -551,12 +632,17 @@ def run_workflow(
             param_spaces.get(name, {}),
             X,
             y_numpy,
+            x_scaler,
+            y_scaler,
             cv=cv,
             is_nn=is_nn,
             is_gpr=is_gpr,
             gpr_kernel_map=gpr_kernel_map,
             nn_epochs=nn_epochs,
             nn_batch_size=nn_batch_size,
+            refit_scaler_per_fold=refit_scaler_per_fold,
+            n_trials=n_trials,
+            cv_random_state=cv_random_state,
         )
 
         # Save optimization artifacts
@@ -582,7 +668,10 @@ def run_workflow(
         all_train_y_true = []
         all_train_y_pred = []
 
-        for fold, (train_idx, test_idx) in enumerate(kf.split(X, y)):
+        fold_pbar = tqdm(enumerate(kf.split(X, y)), total=cv,
+                         desc=f"{name} - Eval folds", unit="fold", leave=False)
+        for fold, (train_idx, test_idx) in fold_pbar:
+            fold_pbar.set_description(f"{name} - Fold {fold + 1}/{cv}")
             print(f"\n--- {name} - Evaluation Fold {fold + 1}/{cv} ---")
 
             # Get data for this fold
@@ -622,7 +711,11 @@ def run_workflow(
             # Clear Keras session for NNR
             if is_nn:
                 K.clear_session()
-                final_model = create_nn(**best_params)
+                final_model = create_nn(
+                    **best_params,
+                    input_dim=X_train_scaled.shape[1],
+                    output_dim=1,
+                )
                 final_model.fit(
                     X_train_scaled,
                     y_train_scaled,
@@ -635,7 +728,7 @@ def run_workflow(
                 if "kernel" in final_params:
                     kernel_name = final_params.pop("kernel")
                     final_params["kernel"] = gpr_kernel_map[kernel_name]
-                elif not param_spaces.get(name, {}):
+                elif "kernel" not in final_params:
                     final_params["kernel"] = RBF(1.0)
                     final_params["alpha"] = 1e-10
                 final_model = model.set_params(**final_params)
@@ -646,7 +739,7 @@ def run_workflow(
 
             retraining_time = time.time() - start_time
             print(
-                f"Fold {fold} model training complete in {retraining_time:.3f} seconds."
+                f"Fold {fold + 1}/{cv} model training complete in {retraining_time:.3f} seconds."
             )
 
             # --- 6. Final Evaluation (per-fold) ---
@@ -675,9 +768,9 @@ def run_workflow(
             print(f"Saving model for {name} from Fold {fold}...")
             model_path = os.path.join(
                 models_dir,
-                f"{name}_{output_name}_best_model_fold_{fold}.{'keras' if name == 'NNR' else 'pkl'}",
+                f"{name}_{output_name}_best_model_fold_{fold}.{'keras' if is_nn else 'pkl'}",
             )
-            if name == "NNR":
+            if is_nn:
                 final_model.save(model_path)
             else:
                 joblib.dump(final_model, model_path)
@@ -719,21 +812,27 @@ def run_workflow(
                 "Model": name,
                 "Optimization Time (s)": round(optimization_time, 3),
                 "Avg Retraining Time (s)": round(avg_retrain_time, 3),
-                "Best Params": best_params,
+                "Best Params": json.dumps(best_params),
                 "Avg Train R2": avg_train_metrics[0],
-                "Avg Train MSE": avg_train_metrics[1],
+                "Std Train R2": train_metrics_df["R2"].std(),
+                "Avg Train MSE (original units)": avg_train_metrics[1],
+                "Std Train MSE (original units)": train_metrics_df["MSE"].std(),
                 "Avg Train MAPE (%)": avg_train_metrics[2],
+                "Std Train MAPE (%)": train_metrics_df["MAPE"].std(),
                 "Avg Test R2": avg_test_metrics[0],
-                "Avg Test MSE": avg_test_metrics[1],
+                "Std Test R2": test_metrics_df["R2"].std(),
+                "Avg Test MSE (original units)": avg_test_metrics[1],
+                "Std Test MSE (original units)": test_metrics_df["MSE"].std(),
                 "Avg Test MAPE (%)": avg_test_metrics[2],
-                "All Fold Test R2": test_metrics_df["R2"].tolist(),
-                "All Fold Test MSE": test_metrics_df["MSE"].tolist(),
-                "All Fold Test MAPE (%)": test_metrics_df["MAPE"].tolist(),
-                "All Fold Train R2": train_metrics_df["R2"].tolist(),
-                "All Fold Train MSE": train_metrics_df["MSE"].tolist(),
-                "All Fold Train MAPE (%)": train_metrics_df["MAPE"].tolist(),
-                "NNR_Epochs": nn_epochs if name == "NNR" else np.nan,
-                "NNR_Batch_Size": nn_batch_size if name == "NNR" else np.nan,
+                "Std Test MAPE (%)": test_metrics_df["MAPE"].std(),
+                "All Fold Test R2": json.dumps(test_metrics_df["R2"].tolist()),
+                "All Fold Test MSE (original units)": json.dumps(test_metrics_df["MSE"].tolist()),
+                "All Fold Test MAPE (%)": json.dumps(test_metrics_df["MAPE"].tolist()),
+                "All Fold Train R2": json.dumps(train_metrics_df["R2"].tolist()),
+                "All Fold Train MSE (original units)": json.dumps(train_metrics_df["MSE"].tolist()),
+                "All Fold Train MAPE (%)": json.dumps(train_metrics_df["MAPE"].tolist()),
+                "NNR_Epochs": nn_epochs if is_nn else np.nan,
+                "NNR_Batch_Size": nn_batch_size if is_nn else np.nan,
             }
         )
 
