@@ -167,7 +167,7 @@ for feat_name, feat_cols in feature_sets.items():
             nn_batch_size=8,
             colors=["#EE6677", "#228833", "#4477AA", "#CCBB44", "#66CCEE"],
             refit_scaler_per_fold=True,
-            n_trials=50,
+            n_trials=100,
             cv_random_state=42,
             nn_model_names=("NNR",),
             gpr_model_names=("GPR",),
