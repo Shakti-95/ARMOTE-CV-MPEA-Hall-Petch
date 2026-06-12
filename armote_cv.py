@@ -33,6 +33,8 @@ import numpy as np
 import pandas as pd
 import joblib
 import time
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # Scikit-learn modules for modeling, metrics, and data preprocessing.
@@ -140,6 +142,8 @@ def cross_val_nn(X, y, build_fn, params, cv=5, epochs=100, batch_size=8,
         tuple: Mean MSE (objective 1) and mean R-squared (objective 2) across all folds.
     """
     kf = KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+    X = np.asarray(X)
+    y = np.asarray(y)
     input_dim = X.shape[1]
     output_dim = y.shape[1] if y.ndim > 1 else 1
     r2_scores, mse_scores = [], []
@@ -268,7 +272,7 @@ def plot_yy(
         plt.close(fig)
 
 
-def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots"):
+def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots", fold_idx=None):
     """
     Generates and saves key Optuna visualization plots as static PNG files.
 
@@ -277,6 +281,7 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
         model_name (str): The name of the model for file naming.
         cv (int): The number of folds for cross-validation.
         save_folder (str): The directory where plot images will be saved.
+        fold_idx (int, optional): Outer fold index; when provided, appended to filenames.
     """
     try:
         import optuna.visualization.matplotlib as vis
@@ -289,6 +294,8 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     # Ensure the save folder exists
     os.makedirs(save_folder, exist_ok=True)
 
+    fold_tag = f"_fold{fold_idx}" if fold_idx is not None else ""
+
     # Generate and save each plot
     # Each Optuna matplotlib plot function returns an 'Axes' object.
     # We get its 'figure' attribute to save and then close it.
@@ -297,7 +304,7 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     ax = vis.plot_pareto_front(study, target_names=["MSE", "R-squared"])
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_pareto_front_{cv}_fold_CV.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_pareto_front{fold_tag}_{cv}_fold_CV.png"))
     plt.close(fig)
 
     # 2. Optimization History (MSE)
@@ -306,7 +313,7 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_mse_{cv}_fold_CV.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_mse{fold_tag}_{cv}_fold_CV.png"))
     plt.close(fig)
 
     # 3. Optimization History (R-squared)
@@ -315,26 +322,32 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_r2_{cv}_fold_CV.png"))
+    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_r2{fold_tag}_{cv}_fold_CV.png"))
     plt.close(fig)
 
     # 4. Parameter Importances (Combined for MSE and R-squared)
-    ax = vis.plot_param_importances(study)
-    fig = ax.figure
-    fig.tight_layout()
-    fig.savefig(
-        os.path.join(save_folder, f"{model_name}_{output_name}_param_importances_combined_{cv}_fold_CV.png")
-    )
-    plt.close(fig)
+    try:
+        ax = vis.plot_param_importances(study)
+        fig = ax.figure
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(save_folder, f"{model_name}_{output_name}_param_importances_combined{fold_tag}_{cv}_fold_CV.png")
+        )
+        plt.close(fig)
+    except RuntimeError as e:
+        print(f"Skipping param importances (combined) for {model_name}: {e}")
 
     # 5. Parameter Importances (Duration)
-    ax = vis.plot_param_importances(
-        study, target=lambda t: t.duration.total_seconds(), target_name="duration"
-    )
-    fig = ax.figure
-    fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_duration_importances_{cv}_fold_CV.png"))
-    plt.close(fig)
+    try:
+        ax = vis.plot_param_importances(
+            study, target=lambda t: t.duration.total_seconds(), target_name="duration"
+        )
+        fig = ax.figure
+        fig.tight_layout()
+        fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_duration_importances{fold_tag}_{cv}_fold_CV.png"))
+        plt.close(fig)
+    except RuntimeError as e:
+        print(f"Skipping param importances (duration) for {model_name}: {e}")
 
     print(f"Optuna plots for {model_name} for {output_name} saved as PNGs in '{save_folder}' directory.")
 
@@ -506,10 +519,12 @@ def run_workflow(
     gpr_model_names=("GPR",),
 ):
     """
-    Executes the end-to-end multi-objective machine learning workflow.
-    1. Finds best hyperparameters using Optuna on 100% of the data.
-    2. Performs a k-fold CV using those best hyperparameters for final evaluation.
-    3. Saves the model and scalers from every fold.
+    Executes the end-to-end multi-objective machine learning workflow using nested CV.
+    For each outer fold:
+      1. Runs Optuna hyperparameter search on that fold's training data only (inner CV).
+      2. Retrains the final model with the fold-specific best params on that fold's train data.
+      3. Evaluates on the held-out outer test fold (never seen during optimization).
+    Saves the model and scalers from every fold.
 
     Args:
         X (pd.DataFrame or np.array): The complete feature dataset.
@@ -566,8 +581,7 @@ def run_workflow(
         raise ValueError("colors list must not be empty.")
 
     # --- 1. Setup and Data Preparation ---
-    # Print the output name
-    print(f"Initializing Pre-Optimization CV workflow for target: '{output_folder_name}'...")
+    print(f"Initializing Nested CV workflow for target: '{output_folder_name}'...")
 
     # Define dynamic paths based on the output_name
     base_dir = output_folder_name
@@ -609,91 +623,76 @@ def run_workflow(
         is_nn = name in nn_model_names
         is_gpr = name in gpr_model_names
 
-        # === PART 1: GLOBAL OPTIMIZATION ===
-        print(f"\n--- {name} - Step 1: Finding Best Hyperparameters (on 100% data) ---")
-
-        # Fit scalers on 100% of data for the optimization step
-        x_scaler = StandardScaler()
-        y_scaler = StandardScaler()
-        x_scaler.fit(X)
-        y_scaler.fit(y_numpy.reshape(-1, 1))
-
-        # Save the optimization-phase scalers (fit on 100% of data)
-        joblib.dump(x_scaler, os.path.join(models_dir, "x_scaler_global_opt.pkl"))
-        joblib.dump(y_scaler, os.path.join(models_dir, "y_scaler_global_opt.pkl"))
-        print(f"Scalers (fit on 100% data) saved in '{models_dir}'.")
-
-        (
-            best_params,
-            study,
-            optimization_time,
-        ) = find_best_hyperparameters(
-            model,
-            param_spaces.get(name, {}),
-            X,
-            y_numpy,
-            x_scaler,
-            y_scaler,
-            cv=cv,
-            is_nn=is_nn,
-            is_gpr=is_gpr,
-            gpr_kernel_map=gpr_kernel_map,
-            nn_epochs=nn_epochs,
-            nn_batch_size=nn_batch_size,
-            refit_scaler_per_fold=refit_scaler_per_fold,
-            n_trials=n_trials,
-            cv_random_state=cv_random_state,
-        )
-
-        # Save optimization artifacts
-        if study:
-            study_path = os.path.join(studies_dir, f"{name}_{output_name}_study.pkl")
-            joblib.dump(study, study_path)
-            print(f"Optuna study saved to: {study_path}")
-            generate_optuna_plots(study, name, cv, output_name, save_folder=plots_dir)
-
-        # === PART 2: k-FOLD CV FINAL EVALUATION ===
-        print(
-            f"\n--- {name} - Step 2: {cv}-Fold CV Final Evaluation (using best params) ---"
-        )
-
-        # Lists to store results from each fold
+        # === NESTED CV: hyperparameter search + evaluation per fold ===
         fold_train_metrics_list = []
         fold_test_metrics_list = []
         fold_retrain_times = []
+        fold_opt_times = []
+        fold_best_params_list = []
 
-        # Lists to store predictions for combined plotting
         oof_y_true = []
         oof_y_pred = []
         all_train_y_true = []
         all_train_y_pred = []
 
         fold_pbar = tqdm(enumerate(kf.split(X, y)), total=cv,
-                         desc=f"{name} - Eval folds", unit="fold", leave=False)
+                         desc=f"{name} - Nested CV folds", unit="fold", leave=False)
         for fold, (train_idx, test_idx) in fold_pbar:
             fold_pbar.set_description(f"{name} - Fold {fold + 1}/{cv}")
-            print(f"\n--- {name} - Evaluation Fold {fold + 1}/{cv} ---")
+            print(f"\n--- {name} - Fold {fold + 1}/{cv} ---")
 
-            # Get data for this fold
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
             y_train_numpy, y_test_numpy = y_numpy[train_idx], y_numpy[test_idx]
 
-            # --- 4. Fit and Save Data Scalers (per-fold) ---
-            print(f"Fitting scalers on Fold {fold + 1} training data...")
+            # --- Step 1: Hyperparameter search on this fold's train data only ---
+            print(f"  Step 1: Hyperparameter search on {len(X_train)} train samples (fold {fold + 1})...")
 
-            # Re-fit global scalers *only on this fold's training data*
+            # Scalers for the optimization phase — fit on outer train only.
+            # Used directly only when refit_scaler_per_fold=False; when True,
+            # Pipeline / cross_val_nn handle their own per-inner-fold scaling.
+            x_scaler_opt = StandardScaler()
+            y_scaler_opt = StandardScaler()
+            x_scaler_opt.fit(X_train)
+            y_scaler_opt.fit(y_train_numpy.reshape(-1, 1))
+
+            best_params, study, optimization_time = find_best_hyperparameters(
+                model,
+                param_spaces.get(name, {}),
+                X_train,
+                y_train_numpy,
+                x_scaler_opt,
+                y_scaler_opt,
+                cv=cv,
+                is_nn=is_nn,
+                is_gpr=is_gpr,
+                gpr_kernel_map=gpr_kernel_map,
+                nn_epochs=nn_epochs,
+                nn_batch_size=nn_batch_size,
+                refit_scaler_per_fold=refit_scaler_per_fold,
+                n_trials=n_trials,
+                cv_random_state=cv_random_state,
+            )
+            fold_opt_times.append(optimization_time)
+            fold_best_params_list.append(best_params)
+
+            if study:
+                study_path = os.path.join(studies_dir, f"{name}_{output_name}_study_fold_{fold}.pkl")
+                joblib.dump(study, study_path)
+                print(f"  Optuna study (fold {fold + 1}) saved to: {study_path}")
+                generate_optuna_plots(study, name, cv, output_name, save_folder=plots_dir, fold_idx=fold)
+
+            # --- Step 2: Fit final scalers on outer train data ---
+            print(f"  Step 2: Fitting scalers on Fold {fold + 1} training data...")
             x_scaler = StandardScaler()
             y_scaler = StandardScaler()
             x_scaler.fit(X_train)
             y_scaler.fit(y_train_numpy.reshape(-1, 1))
 
-            # Scale data for this fold
             X_train_scaled = x_scaler.transform(X_train)
             y_train_scaled = y_scaler.transform(y_train_numpy.reshape(-1, 1))
             X_test_scaled = x_scaler.transform(X_test)
 
-            # Save scalers for every fold
             joblib.dump(
                 x_scaler, os.path.join(models_dir, f"{name}_{output_name}_x_scaler_fold_{fold}.pkl")
             )
@@ -701,14 +700,13 @@ def run_workflow(
                 y_scaler, os.path.join(models_dir, f"{name}_{output_name}_y_scaler_fold_{fold}.pkl")
             )
             print(
-                f"{name}_{output_name}_x_scaler_fold_{fold}.pkl and {name}_{output_name}_y_scaler_fold_{fold}.pkl saved in '{models_dir}'."
+                f"  {name}_{output_name}_x_scaler_fold_{fold}.pkl and {name}_{output_name}_y_scaler_fold_{fold}.pkl saved in '{models_dir}'."
             )
 
-            # --- 5. Train and Time the Final Model (per-fold) ---
-            print("Retraining the final model with the best hyperparameters...")
+            # --- Step 3: Retrain final model with fold-specific best params ---
+            print(f"  Step 3: Retraining final model with fold {fold + 1} best params...")
             start_time = time.time()
 
-            # Clear Keras session for NNR
             if is_nn:
                 K.clear_session()
                 final_model = create_nn(
@@ -738,34 +736,28 @@ def run_workflow(
                 final_model.fit(X_train_scaled, y_train_scaled.ravel())
 
             retraining_time = time.time() - start_time
-            print(
-                f"Fold {fold + 1}/{cv} model training complete in {retraining_time:.3f} seconds."
-            )
+            print(f"  Fold {fold + 1}/{cv} model training complete in {retraining_time:.3f} seconds.")
 
-            # --- 6. Final Evaluation (per-fold) ---
+            # --- Step 4: Evaluate on held-out outer test fold ---
             y_pred_train_scaled = final_model.predict(X_train_scaled)
             y_pred_test_scaled = final_model.predict(X_test_scaled)
-            y_pred_train = y_scaler.inverse_transform(
-                y_pred_train_scaled.reshape(-1, 1)
-            )
+            y_pred_train = y_scaler.inverse_transform(y_pred_train_scaled.reshape(-1, 1))
             y_pred_test = y_scaler.inverse_transform(y_pred_test_scaled.reshape(-1, 1))
 
             train_metrics = compute_metrics(y_train_numpy, y_pred_train)
             test_metrics = compute_metrics(y_test_numpy, y_pred_test)
 
-            # --- 7. Store Fold Results ---
             fold_train_metrics_list.append(train_metrics)
             fold_test_metrics_list.append(test_metrics)
             fold_retrain_times.append(retraining_time)
 
-            # Store predictions for combined plot
             oof_y_true.append(y_test_numpy)
             oof_y_pred.append(y_pred_test)
             all_train_y_true.append(y_train_numpy)
             all_train_y_pred.append(y_pred_train)
 
-            # --- 8. Save model for every fold ---
-            print(f"Saving model for {name} from Fold {fold}...")
+            # --- Step 5: Save model ---
+            print(f"  Saving model for {name} from Fold {fold}...")
             model_path = os.path.join(
                 models_dir,
                 f"{name}_{output_name}_best_model_fold_{fold}.{'keras' if is_nn else 'pkl'}",
@@ -774,7 +766,7 @@ def run_workflow(
                 final_model.save(model_path)
             else:
                 joblib.dump(final_model, model_path)
-            print(f"Best model for {name} for {output_name} (Fold {fold}) saved to: {model_path}")
+            print(f"  Best model for {name} for {output_name} (Fold {fold}) saved to: {model_path}")
 
         # --- 9. Collate Results After All Folds ---
         print(f"\n--- Aggregating {cv}-Fold CV results for: {name} for {output_name} ---")
@@ -810,9 +802,10 @@ def run_workflow(
         results.append(
             {
                 "Model": name,
-                "Optimization Time (s)": round(optimization_time, 3),
+                "Total Optimization Time (s)": round(sum(fold_opt_times), 3),
+                "Avg Optimization Time per Fold (s)": round(np.mean(fold_opt_times), 3),
                 "Avg Retraining Time (s)": round(avg_retrain_time, 3),
-                "Best Params": json.dumps(best_params),
+                "Best Params Per Fold": json.dumps(fold_best_params_list),
                 "Avg Train R2": avg_train_metrics[0],
                 "Std Train R2": train_metrics_df["R2"].std(),
                 "Avg Train MSE (original units)": avg_train_metrics[1],
