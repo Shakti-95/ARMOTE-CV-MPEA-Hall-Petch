@@ -2,7 +2,7 @@
 #
 # Version: 1.0.0
 # Author: Shakti P. Padhy
-# Date: 2023-11-06
+# Date: 2026-06-16
 #
 # Description:
 # This script provides a comprehensive, end-to-end framework for training, optimizing,
@@ -34,7 +34,8 @@ import pandas as pd
 import joblib
 import time
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # Scikit-learn modules for modeling, metrics, and data preprocessing.
@@ -53,7 +54,6 @@ from tensorflow.keras import backend as K
 # Optuna for advanced hyperparameter optimization.
 import optuna
 from tqdm import tqdm
-
 
 
 # --- 3. Core Helper Functions ---
@@ -76,7 +76,14 @@ def compute_metrics(y_true, y_pred):
     return r2, mse, mape
 
 
-def create_nn(hidden_layers=1, units=64, activation="relu", learning_rate=0.001, input_dim=None, output_dim=1):
+def create_nn(
+    hidden_layers=1,
+    units=64,
+    activation="relu",
+    learning_rate=0.001,
+    input_dim=None,
+    output_dim=1,
+):
     """
     Creates, configures, and compiles a Keras Sequential neural network for regression
     where the number of units is halved in each subsequent hidden layer.
@@ -123,8 +130,17 @@ def create_nn(hidden_layers=1, units=64, activation="relu", learning_rate=0.001,
     return model
 
 
-def cross_val_nn(X, y, build_fn, params, cv=5, epochs=100, batch_size=8,
-                 refit_scaler_per_fold=True, cv_random_state=42):
+def cross_val_nn(
+    X,
+    y,
+    build_fn,
+    params,
+    cv=5,
+    epochs=100,
+    batch_size=8,
+    refit_scaler_per_fold=True,
+    cv_random_state=42,
+):
     """
     Performs manual K-Fold cross-validation for a Keras model for multi-objective evaluation.
 
@@ -154,9 +170,9 @@ def cross_val_nn(X, y, build_fn, params, cv=5, epochs=100, batch_size=8,
         if refit_scaler_per_fold:
             fold_xsc = StandardScaler().fit(X_tr)
             fold_ysc = StandardScaler().fit(y_tr.reshape(-1, 1))
-            X_tr  = fold_xsc.transform(X_tr)
+            X_tr = fold_xsc.transform(X_tr)
             X_val = fold_xsc.transform(X_val)
-            y_tr  = fold_ysc.transform(y_tr.reshape(-1, 1))
+            y_tr = fold_ysc.transform(y_tr.reshape(-1, 1))
             y_val = fold_ysc.transform(y_val.reshape(-1, 1))
 
         model = build_fn(**params, input_dim=input_dim, output_dim=output_dim)
@@ -268,11 +284,17 @@ def plot_yy(
         ax2.legend()
 
         plt.tight_layout()
-        fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_yy_plot_{cv}_fold_CV.png"))
+        fig.savefig(
+            os.path.join(
+                save_folder, f"{model_name}_{output_name}_yy_plot_{cv}_fold_CV.png"
+            )
+        )
         plt.close(fig)
 
 
-def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots", fold_idx=None):
+def generate_optuna_plots(
+    study, model_name, cv, output_name, save_folder="plots", fold_idx=None
+):
     """
     Generates and saves key Optuna visualization plots as static PNG files.
 
@@ -304,7 +326,12 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     ax = vis.plot_pareto_front(study, target_names=["MSE", "R-squared"])
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_pareto_front{fold_tag}_{cv}_fold_CV.png"))
+    fig.savefig(
+        os.path.join(
+            save_folder,
+            f"{model_name}_{output_name}_pareto_front{fold_tag}_{cv}_fold_CV.png",
+        )
+    )
     plt.close(fig)
 
     # 2. Optimization History (MSE)
@@ -313,7 +340,12 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_mse{fold_tag}_{cv}_fold_CV.png"))
+    fig.savefig(
+        os.path.join(
+            save_folder,
+            f"{model_name}_{output_name}_optimization_history_mse{fold_tag}_{cv}_fold_CV.png",
+        )
+    )
     plt.close(fig)
 
     # 3. Optimization History (R-squared)
@@ -322,7 +354,12 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
     )
     fig = ax.figure
     fig.tight_layout()
-    fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_optimization_history_r2{fold_tag}_{cv}_fold_CV.png"))
+    fig.savefig(
+        os.path.join(
+            save_folder,
+            f"{model_name}_{output_name}_optimization_history_r2{fold_tag}_{cv}_fold_CV.png",
+        )
+    )
     plt.close(fig)
 
     # 4. Parameter Importances (Combined for MSE and R-squared)
@@ -331,7 +368,10 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
         fig = ax.figure
         fig.tight_layout()
         fig.savefig(
-            os.path.join(save_folder, f"{model_name}_{output_name}_param_importances_combined{fold_tag}_{cv}_fold_CV.png")
+            os.path.join(
+                save_folder,
+                f"{model_name}_{output_name}_param_importances_combined{fold_tag}_{cv}_fold_CV.png",
+            )
         )
         plt.close(fig)
     except RuntimeError as e:
@@ -344,12 +384,19 @@ def generate_optuna_plots(study, model_name, cv, output_name, save_folder="plots
         )
         fig = ax.figure
         fig.tight_layout()
-        fig.savefig(os.path.join(save_folder, f"{model_name}_{output_name}_duration_importances{fold_tag}_{cv}_fold_CV.png"))
+        fig.savefig(
+            os.path.join(
+                save_folder,
+                f"{model_name}_{output_name}_duration_importances{fold_tag}_{cv}_fold_CV.png",
+            )
+        )
         plt.close(fig)
     except RuntimeError as e:
         print(f"Skipping param importances (duration) for {model_name}: {e}")
 
-    print(f"Optuna plots for {model_name} for {output_name} saved as PNGs in '{save_folder}' directory.")
+    print(
+        f"Optuna plots for {model_name} for {output_name} saved as PNGs in '{save_folder}' directory."
+    )
 
 
 # --- 4. Main Workflow Functions ---
@@ -435,20 +482,35 @@ def find_best_hyperparameters(
             K.clear_session()
             if refit_scaler_per_fold:
                 return cross_val_nn(
-                    X, y, create_nn, params,
-                    cv=cv, epochs=nn_epochs, batch_size=nn_batch_size,
-                    refit_scaler_per_fold=True, cv_random_state=cv_random_state,
+                    X,
+                    y,
+                    create_nn,
+                    params,
+                    cv=cv,
+                    epochs=nn_epochs,
+                    batch_size=nn_batch_size,
+                    refit_scaler_per_fold=True,
+                    cv_random_state=cv_random_state,
                 )
             else:
                 return cross_val_nn(
-                    X_scaled, y_scaled, create_nn, params,
-                    cv=cv, epochs=nn_epochs, batch_size=nn_batch_size,
-                    refit_scaler_per_fold=False, cv_random_state=cv_random_state,
+                    X_scaled,
+                    y_scaled,
+                    create_nn,
+                    params,
+                    cv=cv,
+                    epochs=nn_epochs,
+                    batch_size=nn_batch_size,
+                    refit_scaler_per_fold=False,
+                    cv_random_state=cv_random_state,
                 )
         else:
             # Resolve GPR kernel string → object without mutating trial params
             if is_gpr and "kernel" in params:
-                resolved_params = {**params, "kernel": final_kernel_map[params["kernel"]]}
+                resolved_params = {
+                    **params,
+                    "kernel": final_kernel_map[params["kernel"]],
+                }
             else:
                 resolved_params = params
 
@@ -456,13 +518,22 @@ def find_best_hyperparameters(
             if refit_scaler_per_fold:
                 model_clone = copy.deepcopy(model)
                 pipe = Pipeline([("scaler", StandardScaler()), ("model", model_clone)])
-                pipe.set_params(**{f"model__{k}": v for k, v in resolved_params.items()})
-                scores = cross_validate(pipe, X, y.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=-1)
+                pipe.set_params(
+                    **{f"model__{k}": v for k, v in resolved_params.items()}
+                )
+                scores = cross_validate(
+                    pipe, X, y.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=-1
+                )
             else:
                 model_clone = copy.deepcopy(model)
                 model_clone.set_params(**resolved_params)
                 scores = cross_validate(
-                    model_clone, X_scaled, y_scaled.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=-1,
+                    model_clone,
+                    X_scaled,
+                    y_scaled.ravel(),
+                    cv=cv_splitter,
+                    scoring=scoring,
+                    n_jobs=-1,
                 )
             return -np.mean(scores["test_neg_mse"]), np.mean(scores["test_r2"])
 
@@ -506,12 +577,12 @@ def run_workflow(
     models,
     param_spaces,
     cv=5,
-    output_name='Objective 1',
+    output_name="Objective 1",
     output_folder_name="workflow_output",
     gpr_kernel_map=None,
     nn_epochs=100,
     nn_batch_size=32,
-    colors = ['#EE6677', '#228833', '#4477AA', '#CCBB44', '#66CCEE'],
+    colors=["#EE6677", "#228833", "#4477AA", "#CCBB44", "#66CCEE"],
     refit_scaler_per_fold=True,
     n_trials=50,
     cv_random_state=42,
@@ -616,7 +687,11 @@ def run_workflow(
 
     # --- 2. Model Training and Evaluation Loop ---
     results = []
-    kf = splitter if splitter is not None else KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+    kf = (
+        splitter
+        if splitter is not None
+        else KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+    )
     n_outer_splits = kf.get_n_splits(X, y, groups)
 
     model_pbar = tqdm(models.items(), total=len(models), desc="Models", unit="model")
@@ -640,8 +715,13 @@ def run_workflow(
         all_train_y_true = []
         all_train_y_pred = []
 
-        fold_pbar = tqdm(enumerate(kf.split(X, y, groups)), total=n_outer_splits,
-                         desc=f"{name} - Nested CV folds", unit="fold", leave=False)
+        fold_pbar = tqdm(
+            enumerate(kf.split(X, y, groups)),
+            total=n_outer_splits,
+            desc=f"{name} - Nested CV folds",
+            unit="fold",
+            leave=False,
+        )
         for fold, (train_idx, test_idx) in fold_pbar:
             fold_pbar.set_description(f"{name} - Fold {fold + 1}/{n_outer_splits}")
             print(f"\n--- {name} - Fold {fold + 1}/{n_outer_splits} ---")
@@ -651,7 +731,9 @@ def run_workflow(
             y_train_numpy, y_test_numpy = y_numpy[train_idx], y_numpy[test_idx]
 
             # --- Step 1: Hyperparameter search on this fold's train data only ---
-            print(f"  Step 1: Hyperparameter search on {len(X_train)} train samples (fold {fold + 1})...")
+            print(
+                f"  Step 1: Hyperparameter search on {len(X_train)} train samples (fold {fold + 1})..."
+            )
 
             x_scaler_opt = y_scaler_opt = None
             if not refit_scaler_per_fold:
@@ -679,10 +761,14 @@ def run_workflow(
             fold_best_params_list.append(best_params)
 
             if study:
-                study_path = os.path.join(studies_dir, f"{name}_{output_name}_study_fold_{fold}.pkl")
+                study_path = os.path.join(
+                    studies_dir, f"{name}_{output_name}_study_fold_{fold}.pkl"
+                )
                 joblib.dump(study, study_path)
                 print(f"  Optuna study (fold {fold + 1}) saved to: {study_path}")
-                generate_optuna_plots(study, name, cv, output_name, save_folder=plots_dir, fold_idx=fold)
+                generate_optuna_plots(
+                    study, name, cv, output_name, save_folder=plots_dir, fold_idx=fold
+                )
 
             # --- Step 2: Fit final scalers on outer train data ---
             print(f"  Step 2: Fitting scalers on Fold {fold + 1} training data...")
@@ -696,17 +782,25 @@ def run_workflow(
             X_test_scaled = x_scaler.transform(X_test)
 
             joblib.dump(
-                x_scaler, os.path.join(models_dir, f"{name}_{output_name}_x_scaler_fold_{fold}.pkl")
+                x_scaler,
+                os.path.join(
+                    models_dir, f"{name}_{output_name}_x_scaler_fold_{fold}.pkl"
+                ),
             )
             joblib.dump(
-                y_scaler, os.path.join(models_dir, f"{name}_{output_name}_y_scaler_fold_{fold}.pkl")
+                y_scaler,
+                os.path.join(
+                    models_dir, f"{name}_{output_name}_y_scaler_fold_{fold}.pkl"
+                ),
             )
             print(
                 f"  {name}_{output_name}_x_scaler_fold_{fold}.pkl and {name}_{output_name}_y_scaler_fold_{fold}.pkl saved in '{models_dir}'."
             )
 
             # --- Step 3: Retrain final model with fold-specific best params ---
-            print(f"  Step 3: Retraining final model with fold {fold + 1} best params...")
+            print(
+                f"  Step 3: Retraining final model with fold {fold + 1} best params..."
+            )
             start_time = time.time()
 
             if is_nn:
@@ -738,18 +832,27 @@ def run_workflow(
                 final_model.fit(X_train_scaled, y_train_scaled.ravel())
 
             retraining_time = time.time() - start_time
-            print(f"  Fold {fold + 1}/{n_outer_splits} model training complete in {retraining_time:.3f} seconds.")
+            print(
+                f"  Fold {fold + 1}/{n_outer_splits} model training complete in {retraining_time:.3f} seconds."
+            )
 
             # --- Step 4: Evaluate on held-out outer test fold ---
             y_pred_train_scaled = final_model.predict(X_train_scaled)
             y_pred_test_scaled = final_model.predict(X_test_scaled)
-            y_pred_train = y_scaler.inverse_transform(y_pred_train_scaled.reshape(-1, 1))
+            y_pred_train = y_scaler.inverse_transform(
+                y_pred_train_scaled.reshape(-1, 1)
+            )
             y_pred_test = y_scaler.inverse_transform(y_pred_test_scaled.reshape(-1, 1))
 
             train_metrics = compute_metrics(y_train_numpy, y_pred_train)
             if pool_oof_metrics and len(y_test_numpy) < 2:
                 fold_mse = mean_squared_error(y_test_numpy.ravel(), y_pred_test.ravel())
-                fold_mape = mean_absolute_percentage_error(y_test_numpy.ravel(), y_pred_test.ravel()) * 100
+                fold_mape = (
+                    mean_absolute_percentage_error(
+                        y_test_numpy.ravel(), y_pred_test.ravel()
+                    )
+                    * 100
+                )
                 test_metrics = (np.nan, fold_mse, fold_mape)
             else:
                 test_metrics = compute_metrics(y_test_numpy, y_pred_test)
@@ -773,13 +876,21 @@ def run_workflow(
                 final_model.save(model_path)
             else:
                 joblib.dump(final_model, model_path)
-            print(f"  Best model for {name} for {output_name} (Fold {fold}) saved to: {model_path}")
+            print(
+                f"  Best model for {name} for {output_name} (Fold {fold}) saved to: {model_path}"
+            )
 
         # --- 9. Collate Results After All Folds ---
-        print(f"\n--- Aggregating {n_outer_splits}-Fold CV results for: {name} for {output_name} ---")
+        print(
+            f"\n--- Aggregating {n_outer_splits}-Fold CV results for: {name} for {output_name} ---"
+        )
 
-        train_metrics_df = pd.DataFrame(fold_train_metrics_list, columns=["R2", "MSE", "MAPE"])
-        test_metrics_df = pd.DataFrame(fold_test_metrics_list, columns=["R2", "MSE", "MAPE"])
+        train_metrics_df = pd.DataFrame(
+            fold_train_metrics_list, columns=["R2", "MSE", "MAPE"]
+        )
+        test_metrics_df = pd.DataFrame(
+            fold_test_metrics_list, columns=["R2", "MSE", "MAPE"]
+        )
         avg_train_metrics = train_metrics_df.mean().values
         avg_retrain_time = np.mean(fold_retrain_times)
 
@@ -830,11 +941,17 @@ def run_workflow(
                 "Avg Test MAPE (%)": avg_test_metrics[2],
                 "Std Test MAPE (%)": test_mape_std,
                 "All Fold Test R2": json.dumps(test_metrics_df["R2"].tolist()),
-                "All Fold Test MSE (original units)": json.dumps(test_metrics_df["MSE"].tolist()),
+                "All Fold Test MSE (original units)": json.dumps(
+                    test_metrics_df["MSE"].tolist()
+                ),
                 "All Fold Test MAPE (%)": json.dumps(test_metrics_df["MAPE"].tolist()),
                 "All Fold Train R2": json.dumps(train_metrics_df["R2"].tolist()),
-                "All Fold Train MSE (original units)": json.dumps(train_metrics_df["MSE"].tolist()),
-                "All Fold Train MAPE (%)": json.dumps(train_metrics_df["MAPE"].tolist()),
+                "All Fold Train MSE (original units)": json.dumps(
+                    train_metrics_df["MSE"].tolist()
+                ),
+                "All Fold Train MAPE (%)": json.dumps(
+                    train_metrics_df["MAPE"].tolist()
+                ),
                 "NNR_Epochs": nn_epochs if is_nn else np.nan,
                 "NNR_Batch_Size": nn_batch_size if is_nn else np.nan,
             }
@@ -842,8 +959,12 @@ def run_workflow(
 
     # --- 10. Final Summary ---
     results_df = pd.DataFrame(results)
-    results_csv_path = os.path.join(base_dir, f"{output_name}_results_{n_outer_splits}_fold_CV.csv")
+    results_csv_path = os.path.join(
+        base_dir, f"{output_name}_results_{n_outer_splits}_fold_CV.csv"
+    )
     results_df.to_csv(results_csv_path, index=False)
     print("\n--- Workflow Complete ---")
-    print(f"Final {n_outer_splits}-fold CV results summary for {output_name} saved to {results_csv_path}")
+    print(
+        f"Final {n_outer_splits}-fold CV results summary for {output_name} saved to {results_csv_path}"
+    )
     return results_df
