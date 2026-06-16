@@ -513,7 +513,7 @@ def run_workflow(
     nn_batch_size=32,
     colors = ['#EE6677', '#228833', '#4477AA', '#CCBB44', '#66CCEE'],
     refit_scaler_per_fold=True,
-    n_trials=100,
+    n_trials=50,
     cv_random_state=42,
     nn_model_names=("NNR",),
     gpr_model_names=("GPR",),
@@ -648,13 +648,10 @@ def run_workflow(
             # --- Step 1: Hyperparameter search on this fold's train data only ---
             print(f"  Step 1: Hyperparameter search on {len(X_train)} train samples (fold {fold + 1})...")
 
-            # Scalers for the optimization phase — fit on outer train only.
-            # Used directly only when refit_scaler_per_fold=False; when True,
-            # Pipeline / cross_val_nn handle their own per-inner-fold scaling.
-            x_scaler_opt = StandardScaler()
-            y_scaler_opt = StandardScaler()
-            x_scaler_opt.fit(X_train)
-            y_scaler_opt.fit(y_train_numpy.reshape(-1, 1))
+            x_scaler_opt = y_scaler_opt = None
+            if not refit_scaler_per_fold:
+                x_scaler_opt = StandardScaler().fit(X_train)
+                y_scaler_opt = StandardScaler().fit(y_train_numpy.reshape(-1, 1))
 
             best_params, study, optimization_time = find_best_hyperparameters(
                 model,
@@ -729,10 +726,10 @@ def run_workflow(
                 elif "kernel" not in final_params:
                     final_params["kernel"] = RBF(1.0)
                     final_params["alpha"] = 1e-10
-                final_model = model.set_params(**final_params)
+                final_model = copy.deepcopy(model).set_params(**final_params)
                 final_model.fit(X_train_scaled, y_train_scaled.ravel())
             else:
-                final_model = model.set_params(**best_params)
+                final_model = copy.deepcopy(model).set_params(**best_params)
                 final_model.fit(X_train_scaled, y_train_scaled.ravel())
 
             retraining_time = time.time() - start_time
