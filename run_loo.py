@@ -1,21 +1,20 @@
-# run_models.py
+# run_loo.py
 #
-# Runs ARMOTE-CV workflow on grain-size-based HEA data with cumulative feature sets.
+# Runs ARMOTE-CV workflow with Leave-One-Out (LOO) CV.
 #
-# Feature set logic (cumulative):
-#   S1 : S1_grain
-#   S2 : S1_grain + S2_wen
-#   S3 : S1_grain + S2_wen + S3_proc
-#   S4 : S1_grain + S2_wen + S3_proc + S4_comp + S4_sss
+# Outer CV : LeaveOneOut() — n folds, 1 alloy held out per fold.
+# Inner CV : KFold(n_splits=inner_cv) — used by Optuna only.
+# Metrics  : R²/MSE/MAPE computed on pooled OOF predictions (Q² / PRESS-R²).
+#             Per-fold test R² is undefined for a single point and stored as NaN.
 #
-# Targets: YS (MPa) and HV — each target handled independently with per-target NaN drop.
-# Outputs saved to: {feat_set}_{target}_Results_5_Fold_CV/
+# NOTE: LOO is expensive. With n≈94, 50 Optuna trials, inner_cv=5:
+#       94 outer folds × 50 trials × 5 inner folds = 23 500 fits per model.
 #
 # Usage examples:
-#   python run_models.py                              # all feature sets, all targets, all models
-#   python run_models.py -f S1 S2 -t YS              # S1+S2, YS only
-#   python run_models.py -f S3 -t HV -m SVR XGBoost  # S3, HV, two models only
-#   python run_models.py --list                       # print valid choices and exit
+#   python run_loo.py                              # all feature sets, targets, models
+#   python run_loo.py -f S1 S2 -t YS              # S1+S2, YS only
+#   python run_loo.py -f S3 -t HV -m SVR XGBoost  # S3, HV, two models only
+#   python run_loo.py --list                       # print valid choices and exit
 
 import argparse
 import sys
@@ -25,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.linear_model import LinearRegression, BayesianRidge
+from sklearn.model_selection import LeaveOneOut
 from sklearn.svm import SVR
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern, RationalQuadratic
@@ -140,12 +140,11 @@ param_spaces = {
 
 # ── CLI argument parsing ───────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(
-    description="Run ARMOTE-CV nested-CV workflow.",
+    description="Run ARMOTE-CV LOO workflow.",
     formatter_class=argparse.RawTextHelpFormatter,
 )
 parser.add_argument(
-    "-f",
-    "--feature-sets",
+    "-f", "--feature-sets",
     nargs="+",
     choices=list(ALL_FEATURE_SETS.keys()),
     default=list(ALL_FEATURE_SETS.keys()),
@@ -153,8 +152,7 @@ parser.add_argument(
     help=f"Feature sets to run. Choices: {list(ALL_FEATURE_SETS.keys())} (default: all)",
 )
 parser.add_argument(
-    "-t",
-    "--targets",
+    "-t", "--targets",
     nargs="+",
     choices=ALL_TARGETS,
     default=ALL_TARGETS,
@@ -162,8 +160,7 @@ parser.add_argument(
     help=f"Targets to run. Choices: {ALL_TARGETS} (default: all)",
 )
 parser.add_argument(
-    "-m",
-    "--models",
+    "-m", "--models",
     nargs="+",
     choices=list(ALL_MODELS.keys()),
     default=list(ALL_MODELS.keys()),
@@ -177,10 +174,10 @@ parser.add_argument(
     help="Optuna trials per inner fold (default: 50)",
 )
 parser.add_argument(
-    "--cv",
+    "--inner-cv",
     type=int,
     default=5,
-    help="Number of CV folds (default: 5)",
+    help="KFold folds for Optuna inner CV (default: 5)",
 )
 parser.add_argument(
     "--list",
@@ -204,14 +201,12 @@ models_to_run = {k: ALL_MODELS[k] for k in args.models}
 # ── Main loop ──────────────────────────────────────────────────────────────────
 total_runs = len(feature_sets) * len(targets)
 print("=" * 80)
-print("STARTING ARMOTE-CV NESTED CV WORKFLOWS")
+print("STARTING ARMOTE-CV LOO WORKFLOWS")
 print(f"Feature sets : {list(feature_sets.keys())}")
 print(f"Targets      : {targets}")
 print(f"Models       : {list(models_to_run.keys())}")
-print(f"CV folds     : {args.cv}")
-print(
-    f"Optuna trials: {args.n_trials} per inner fold  ({args.cv * args.n_trials} total per model)"
-)
+print(f"Inner CV     : {args.inner_cv}-fold KFold (Optuna only)")
+print(f"Optuna trials: {args.n_trials} per inner fold  ({args.inner_cv * args.n_trials} total per model per outer fold)")
 print(f"Total runs   : {total_runs}")
 print("=" * 80)
 
@@ -229,14 +224,13 @@ for feat_name, feat_cols in feature_sets.items():
         X = subset[feat_cols]
         y = subset[target_name].values
 
-        output_folder = f"{feat_name}_{target_name}_Results_{args.cv}_Fold_CV"
+        output_folder = f"{feat_name}_{target_name}_Results_LOO_CV"
 
         run_workflow(
             X,
             y,
             models_to_run,
             param_spaces,
-            cv=args.cv,
             output_name=target_name,
             output_folder_name=output_folder,
             gpr_kernel_map=gpr_kernel_map,
@@ -248,10 +242,13 @@ for feat_name, feat_cols in feature_sets.items():
             cv_random_state=42,
             nn_model_names=("NNR",),
             gpr_model_names=("GPR",),
+            splitter=LeaveOneOut(),
+            inner_cv=args.inner_cv,
+            pool_oof_metrics=True,
         )
 
         print(f"{'=' * 30} Completed: {feat_name} | {target_name} {'=' * 30}\n")
 
 print("\n" + "=" * 80)
-print("ALL WORKFLOWS COMPLETE.")
+print("ALL LOO WORKFLOWS COMPLETE.")
 print("=" * 80)

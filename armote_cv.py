@@ -517,6 +517,10 @@ def run_workflow(
     cv_random_state=42,
     nn_model_names=("NNR",),
     gpr_model_names=("GPR",),
+    splitter=None,
+    inner_cv=5,
+    pool_oof_metrics=False,
+    groups=None,
 ):
     """
     Executes the end-to-end multi-objective machine learning workflow using nested CV.
@@ -612,7 +616,8 @@ def run_workflow(
 
     # --- 2. Model Training and Evaluation Loop ---
     results = []
-    kf = KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+    kf = splitter if splitter is not None else KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
+    n_outer_splits = kf.get_n_splits(X, y, groups)
 
     model_pbar = tqdm(models.items(), total=len(models), desc="Models", unit="model")
     for name, model in model_pbar:
@@ -635,11 +640,11 @@ def run_workflow(
         all_train_y_true = []
         all_train_y_pred = []
 
-        fold_pbar = tqdm(enumerate(kf.split(X, y)), total=cv,
+        fold_pbar = tqdm(enumerate(kf.split(X, y, groups)), total=n_outer_splits,
                          desc=f"{name} - Nested CV folds", unit="fold", leave=False)
         for fold, (train_idx, test_idx) in fold_pbar:
-            fold_pbar.set_description(f"{name} - Fold {fold + 1}/{cv}")
-            print(f"\n--- {name} - Fold {fold + 1}/{cv} ---")
+            fold_pbar.set_description(f"{name} - Fold {fold + 1}/{n_outer_splits}")
+            print(f"\n--- {name} - Fold {fold + 1}/{n_outer_splits} ---")
 
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
@@ -660,7 +665,7 @@ def run_workflow(
                 y_train_numpy,
                 x_scaler_opt,
                 y_scaler_opt,
-                cv=cv,
+                cv=inner_cv,
                 is_nn=is_nn,
                 is_gpr=is_gpr,
                 gpr_kernel_map=gpr_kernel_map,
@@ -733,7 +738,7 @@ def run_workflow(
                 final_model.fit(X_train_scaled, y_train_scaled.ravel())
 
             retraining_time = time.time() - start_time
-            print(f"  Fold {fold + 1}/{cv} model training complete in {retraining_time:.3f} seconds.")
+            print(f"  Fold {fold + 1}/{n_outer_splits} model training complete in {retraining_time:.3f} seconds.")
 
             # --- Step 4: Evaluate on held-out outer test fold ---
             y_pred_train_scaled = final_model.predict(X_train_scaled)
@@ -742,7 +747,12 @@ def run_workflow(
             y_pred_test = y_scaler.inverse_transform(y_pred_test_scaled.reshape(-1, 1))
 
             train_metrics = compute_metrics(y_train_numpy, y_pred_train)
-            test_metrics = compute_metrics(y_test_numpy, y_pred_test)
+            if pool_oof_metrics and len(y_test_numpy) < 2:
+                fold_mse = mean_squared_error(y_test_numpy.ravel(), y_pred_test.ravel())
+                fold_mape = mean_absolute_percentage_error(y_test_numpy.ravel(), y_pred_test.ravel()) * 100
+                test_metrics = (np.nan, fold_mse, fold_mape)
+            else:
+                test_metrics = compute_metrics(y_test_numpy, y_pred_test)
 
             fold_train_metrics_list.append(train_metrics)
             fold_test_metrics_list.append(test_metrics)
@@ -766,19 +776,23 @@ def run_workflow(
             print(f"  Best model for {name} for {output_name} (Fold {fold}) saved to: {model_path}")
 
         # --- 9. Collate Results After All Folds ---
-        print(f"\n--- Aggregating {cv}-Fold CV results for: {name} for {output_name} ---")
+        print(f"\n--- Aggregating {n_outer_splits}-Fold CV results for: {name} for {output_name} ---")
 
-        # Calculate average metrics and times
-        train_metrics_df = pd.DataFrame(
-            fold_train_metrics_list, columns=["R2", "MSE", "MAPE"]
-        )
-        test_metrics_df = pd.DataFrame(
-            fold_test_metrics_list, columns=["R2", "MSE", "MAPE"]
-        )
-
+        train_metrics_df = pd.DataFrame(fold_train_metrics_list, columns=["R2", "MSE", "MAPE"])
+        test_metrics_df = pd.DataFrame(fold_test_metrics_list, columns=["R2", "MSE", "MAPE"])
         avg_train_metrics = train_metrics_df.mean().values
-        avg_test_metrics = test_metrics_df.mean().values
         avg_retrain_time = np.mean(fold_retrain_times)
+
+        if pool_oof_metrics:
+            pooled_true = np.concatenate([a.ravel() for a in oof_y_true])
+            pooled_pred = np.concatenate([a.ravel() for a in oof_y_pred])
+            avg_test_metrics = compute_metrics(pooled_true, pooled_pred)
+            test_r2_std = test_mse_std = test_mape_std = np.nan
+        else:
+            avg_test_metrics = test_metrics_df.mean().values
+            test_r2_std = test_metrics_df["R2"].std()
+            test_mse_std = test_metrics_df["MSE"].std()
+            test_mape_std = test_metrics_df["MAPE"].std()
 
         # Generate combined plot
         plot_yy(
@@ -790,7 +804,7 @@ def run_workflow(
             output_name,
             avg_train_metrics,
             avg_test_metrics,
-            cv,
+            n_outer_splits,
             colors,
             save_folder=plots_dir,
         )
@@ -810,11 +824,11 @@ def run_workflow(
                 "Avg Train MAPE (%)": avg_train_metrics[2],
                 "Std Train MAPE (%)": train_metrics_df["MAPE"].std(),
                 "Avg Test R2": avg_test_metrics[0],
-                "Std Test R2": test_metrics_df["R2"].std(),
+                "Std Test R2": test_r2_std,
                 "Avg Test MSE (original units)": avg_test_metrics[1],
-                "Std Test MSE (original units)": test_metrics_df["MSE"].std(),
+                "Std Test MSE (original units)": test_mse_std,
                 "Avg Test MAPE (%)": avg_test_metrics[2],
-                "Std Test MAPE (%)": test_metrics_df["MAPE"].std(),
+                "Std Test MAPE (%)": test_mape_std,
                 "All Fold Test R2": json.dumps(test_metrics_df["R2"].tolist()),
                 "All Fold Test MSE (original units)": json.dumps(test_metrics_df["MSE"].tolist()),
                 "All Fold Test MAPE (%)": json.dumps(test_metrics_df["MAPE"].tolist()),
@@ -828,8 +842,8 @@ def run_workflow(
 
     # --- 10. Final Summary ---
     results_df = pd.DataFrame(results)
-    results_csv_path = os.path.join(base_dir, f"{output_name}_results_{cv}_fold_CV.csv")
+    results_csv_path = os.path.join(base_dir, f"{output_name}_results_{n_outer_splits}_fold_CV.csv")
     results_df.to_csv(results_csv_path, index=False)
     print("\n--- Workflow Complete ---")
-    print(f"Final {cv}-fold CV results summary for {output_name} saved to {results_csv_path}")
+    print(f"Final {n_outer_splits}-fold CV results summary for {output_name} saved to {results_csv_path}")
     return results_df
