@@ -592,6 +592,8 @@ def run_workflow(
     inner_cv=5,
     pool_oof_metrics=False,
     groups=None,
+    overwrite=False,
+    append=False,
 ):
     """
     Executes the end-to-end multi-objective machine learning workflow using nested CV.
@@ -693,6 +695,26 @@ def run_workflow(
         else KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
     )
     n_outer_splits = kf.get_n_splits(X, y, groups)
+
+    # --- Early CSV path resolution + append/overwrite guard ---
+    results_csv_path = os.path.join(
+        base_dir, f"{output_name}_results_{n_outer_splits}_fold_CV.csv"
+    )
+    existing_df = None
+    if os.path.exists(results_csv_path):
+        if append:
+            existing_df = pd.read_csv(results_csv_path)
+            completed = set(existing_df["Model"].tolist())
+            models = {k: v for k, v in models.items() if k not in completed}
+            if not models:
+                print(f"All models already in {results_csv_path}. Nothing to do.")
+                return existing_df
+            print(f"Appending. Already done: {sorted(completed)}. Remaining: {list(models.keys())}")
+        elif not overwrite:
+            raise FileExistsError(
+                f"Output CSV already exists: {results_csv_path}\n"
+                "Re-run with --overwrite to replace it, or --append to add missing models."
+            )
 
     model_pbar = tqdm(models.items(), total=len(models), desc="Models", unit="model")
     for name, model in model_pbar:
@@ -940,7 +962,9 @@ def run_workflow(
                 "Std Test MSE (original units)": test_mse_std,
                 "Avg Test MAPE (%)": avg_test_metrics[2],
                 "Std Test MAPE (%)": test_mape_std,
-                "All Fold Test R2": json.dumps(test_metrics_df["R2"].tolist()),
+                "All Fold Test R2": json.dumps(
+                    [None if pd.isna(v) else v for v in test_metrics_df["R2"].tolist()]
+                ),
                 "All Fold Test MSE (original units)": json.dumps(
                     test_metrics_df["MSE"].tolist()
                 ),
@@ -959,9 +983,8 @@ def run_workflow(
 
     # --- 10. Final Summary ---
     results_df = pd.DataFrame(results)
-    results_csv_path = os.path.join(
-        base_dir, f"{output_name}_results_{n_outer_splits}_fold_CV.csv"
-    )
+    if existing_df is not None:
+        results_df = pd.concat([existing_df, results_df], ignore_index=True)
     results_df.to_csv(results_csv_path, index=False)
     print("\n--- Workflow Complete ---")
     print(

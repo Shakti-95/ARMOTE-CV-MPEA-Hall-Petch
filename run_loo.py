@@ -184,6 +184,16 @@ parser.add_argument(
     action="store_true",
     help="Print valid choices for -f / -t / -m and exit.",
 )
+parser.add_argument(
+    "--overwrite",
+    action="store_true",
+    help="Overwrite existing output CSV files instead of raising an error.",
+)
+parser.add_argument(
+    "--append",
+    action="store_true",
+    help="Append results for missing models to an existing output CSV.",
+)
 
 args = parser.parse_args()
 
@@ -245,6 +255,8 @@ for feat_name, feat_cols in feature_sets.items():
             splitter=LeaveOneOut(),
             inner_cv=args.inner_cv,
             pool_oof_metrics=True,
+            overwrite=args.overwrite,
+            append=args.append,
         )
 
         print(f"{'=' * 30} Completed: {feat_name} | {target_name} {'=' * 30}\n")
