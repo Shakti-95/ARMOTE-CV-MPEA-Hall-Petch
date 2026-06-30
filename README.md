@@ -114,7 +114,7 @@ Each run writes to an auto-created directory:
 
 ```
 {S1..S4}_{YS|HV}_Results_{protocol}/
-├── models/     # .pkl files — fitted model + scaler per fold
+├── models/     # .pkl files (sklearn/XGBoost) and .keras files (NNR) — fitted model + scaler per fold
 ├── plots/      # Y-Y scatter plots, Optuna history plots per fold
 ├── studies/    # Optuna study objects (reusable for analysis)
 └── {target}_results_{n_folds}_fold_CV.csv   # summary metrics table
@@ -237,19 +237,6 @@ param_spaces = {
     }
 }
 ```
-
----
-
-## Citation
-
-A paper describing this work is currently under preparation. If you use this code or dataset in the meantime, please cite this repository:
-
-```
-Padhy, S. P. (2025). ARMOTE-CV: Automated Regression with Multi-Objective Tuning
-and Evaluation via Cross-Validation. GitHub. https://github.com/Shakti-95/ARMOTE-CV
-```
-
-This section will be updated with the full journal citation and DOI upon publication.
 
 ---
 
