@@ -65,13 +65,17 @@ Three scripts wrap the same `armote_cv.py` engine. The only difference is the ou
 - **LOO** — most pessimistic per-sample estimate. Expensive: ~23 500 model fits per model at defaults.
 - **LOBO** — tests whether the model generalizes to a completely unseen BO batch. Relevant when deployment means predicting on new experimental campaigns.
 
-### LOO/LOBO R²
+### R² reporting by protocol
 
-For LOO and LOBO, per-fold R² is undefined when a test fold has only one sample. Instead, the **pooled (PRESS) R²** is computed over all out-of-fold predictions:
+**5-Fold:** Per-fold R² is computed normally. `Avg Test R2` and `Std Test R2` are the mean and std across 5 folds.
+
+**LOBO:** Each test fold is a full batch (multiple samples), so per-fold R² is computable and stored in the `All Fold Test R2` column. However, `Avg Test R2` reports the **pooled (PRESS) R²** — computed from all out-of-fold predictions concatenated — which is more robust than the mean of 6 fold R²s given the small fold count. `Std Test R2` is `NaN` because it is not meaningful alongside a pooled metric.
+
+**LOO:** Each test fold is a single sample, so per-fold R² is undefined. `All Fold Test R2` entries are `null`. `Avg Test R2` again reports the pooled PRESS R²:
 
 $$R^2 = 1 - \frac{\sum_i (y_i - \hat{y}_i)^2}{\sum_i (y_i - \bar{y})^2}$$
 
-Per-fold R² is stored as `null` in the output CSV; the pooled value is the meaningful metric. The inner CV for Optuna is always a fast KFold (default: 5 folds) regardless of which outer splitter is used.
+The inner CV for Optuna is always a fast KFold (default: 5 folds) regardless of the outer splitter.
 
 ---
 
