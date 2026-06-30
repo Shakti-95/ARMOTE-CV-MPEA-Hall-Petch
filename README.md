@@ -1,8 +1,8 @@
-# ARMOTE-CV
+# ARMOTE-CV-HEA
 
 **ARMOTE-CV** (Automated Regression with Multi-Objective Tuning and Evaluation via Cross-Validation) is a nested cross-validation engine for regression with automated multi-objective hyperparameter optimization.
 
-This repository also includes a complete case study: predicting yield strength (YS) and Vickers hardness (HV) of high-entropy alloys (HEAs) from grain size and composition features.
+This repository applies ARMOTE-CV to predict yield strength (YS) and Vickers hardness (HV) of high-entropy alloys (HEAs) from grain size and composition features.
 
 It is designed so that hyperparameter tuning and model evaluation are fully decoupled — the test fold is never seen during optimization. For each outer fold it:
 
@@ -258,8 +258,9 @@ This section will be updated with the full journal citation and DOI upon publica
 A paper describing this work is currently under preparation. If you use this code or dataset in the meantime, please cite this repository:
 
 ```
-Padhy, S. P. (2026). ARMOTE-CV: Automated Regression with Multi-Objective Tuning
-and Evaluation via Cross-Validation. GitHub. https://github.com/Shakti-95/ARMOTE-CV
+Padhy, S. P. (2026). ARMOTE-CV-HEA: Automated Regression with Multi-Objective Tuning
+and Evaluation via Cross-Validation applied to HEA property prediction. GitHub.
+https://github.com/Shakti-95/ARMOTE-CV-HEA
 ```
 
 This section will be updated with the full journal citation and DOI upon publication.
