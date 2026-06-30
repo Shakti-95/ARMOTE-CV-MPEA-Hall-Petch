@@ -113,6 +113,8 @@ python run_lobo.py -f S1 -t YS -m RandomForest XGBoost --n-trials 50
 | `-m`, `--models` | all 8 models | Models to run |
 | `--cv` | `5` | Number of outer CV folds (also sets inner CV for Optuna) |
 | `--n-trials` | `50` | Optuna trials per inner fold |
+| `--overwrite` | off | Replace existing output CSV instead of raising an error |
+| `--append` | off | Add missing models to an existing CSV (skips already-complete models) |
 | `--list` | — | Print choices and exit |
 
 > **Total Optuna trials per model:** `--cv × --n-trials`
@@ -126,6 +128,30 @@ python run_lobo.py -f S1 -t YS -m RandomForest XGBoost --n-trials 50
 | `-m`, `--models` | all 8 models | Models to run |
 | `--inner-cv` | `5` | KFold folds for Optuna inner CV |
 | `--n-trials` | `50` | Optuna trials per inner fold |
+| `--overwrite` | off | Replace existing output CSV instead of raising an error |
+| `--append` | off | Add missing models to an existing CSV (skips already-complete models) |
 | `--list` | — | Print choices and exit |
 
 > **Note (LOO cost):** Total fits per model ≈ `n_samples × --n-trials × --inner-cv`. With n≈94 and defaults: 94 × 50 × 5 = 23 500 fits. Use `--models` to narrow scope.
+
+## Output Safety
+
+By default, re-running a script raises `FileExistsError` if an output CSV already exists — this prevents accidental data loss.
+
+| Flag | Behavior |
+|------|----------|
+| *(default)* | Error if CSV exists |
+| `--overwrite` | Replace the existing CSV entirely |
+| `--append` | Read the existing CSV, skip already-complete models, append new results |
+
+`--append` is the safe choice when adding models to a partial run:
+
+```bash
+# Resume LOO after only NNR was completed
+python run_loo.py --models LinearRegression BayesianRidge SVR DecisionTree RandomForest XGBoost GPR --append
+
+# Same for LOBO
+python run_lobo.py --models LinearRegression BayesianRidge SVR DecisionTree RandomForest XGBoost GPR --append
+```
+
+If all models are already present in the CSV, `--append` exits immediately with no work done.
