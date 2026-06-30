@@ -1,14 +1,11 @@
-# Grain-size-YS-HV-ARMOTE-CV
+# ARMOTE-CV
 
-Nested cross-validation workflow for predicting yield strength (YS) and Vickers hardness (HV) of high-entropy alloys (HEAs) from grain size and composition features, using the **ARMOTE-CV** engine.
+**ARMOTE-CV** (Automated Regression with Multi-Objective Tuning and Evaluation via Cross-Validation) is a nested cross-validation engine for regression with automated multi-objective hyperparameter optimization.
 
----
+This repository also includes a complete case study: predicting yield strength (YS) and Vickers hardness (HV) of high-entropy alloys (HEAs) from grain size and composition features.
 
-## What is ARMOTE-CV?
+It is designed so that hyperparameter tuning and model evaluation are fully decoupled — the test fold is never seen during optimization. For each outer fold it:
 
-**ARMOTE-CV** (Automated Regression with Multi-Objective Tuning and Evaluation via Cross-Validation) is a general-purpose nested CV engine for regression. It is designed so that hyperparameter tuning and model evaluation are fully decoupled — the test fold is never seen during optimization.
-
-For each outer fold it:
 1. Runs multi-objective Bayesian hyperparameter optimization (Optuna, TPE) on the outer **training** split only.
 2. Optimizes two objectives simultaneously: minimize MSE and maximize R². The best trial is selected from the Pareto front by highest R².
 3. Retrains the winning configuration on the full outer training split.
