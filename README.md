@@ -277,5 +277,12 @@ This section will be updated with the full journal citation and DOI upon publica
 │   ├── inputs.csv                     # HEA dataset
 │   └── inputs_feature_manifest.csv    # Maps columns to feature blocks S1–S4
 ├── requirements.txt
+├── LICENSE
 └── {S1..S4}_{YS|HV}_Results_{protocol}/   # Auto-generated per run
 ```
+
+---
+
+## License
+
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
