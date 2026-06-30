@@ -240,6 +240,32 @@ param_spaces = {
 
 ---
 
+## Citation
+
+A paper describing this work is currently under preparation. If you use this code or dataset in the meantime, please cite this repository:
+
+```
+Padhy, S. P. (2025). ARMOTE-CV: Automated Regression with Multi-Objective Tuning
+and Evaluation via Cross-Validation. GitHub. https://github.com/Shakti-95/ARMOTE-CV
+```
+
+This section will be updated with the full journal citation and DOI upon publication.
+
+---
+
+## Citation
+
+A paper describing this work is currently under preparation. If you use this code or dataset in the meantime, please cite this repository:
+
+```
+Padhy, S. P. (2026). ARMOTE-CV: Automated Regression with Multi-Objective Tuning
+and Evaluation via Cross-Validation. GitHub. https://github.com/Shakti-95/ARMOTE-CV
+```
+
+This section will be updated with the full journal citation and DOI upon publication.
+
+---
+
 ## Repository Structure
 
 ```
