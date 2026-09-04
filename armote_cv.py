@@ -45,11 +45,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_percentage_error
 from sklearn.gaussian_process.kernels import RBF
 
-# Keras via TensorFlow backend.
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import backend as K
+# Keras/TensorFlow are imported lazily (inside the NNR-only code paths below) so
+# that this module can be imported, and every non-NNR model run, without tensorflow
+# installed.
 
 # Optuna for advanced hyperparameter optimization.
 import optuna
@@ -99,6 +97,10 @@ def create_nn(
     Returns:
         keras.Model: A compiled Keras model instance ready for training.
     """
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense
+    from tensorflow.keras.optimizers import Adam
+
     # --- Model Creation ---
     model = Sequential()
 
@@ -479,6 +481,7 @@ def find_best_hyperparameters(
         cv_splitter = KFold(n_splits=cv, shuffle=True, random_state=cv_random_state)
 
         if is_nn:
+            from tensorflow.keras import backend as K
             K.clear_session()
             if refit_scaler_per_fold:
                 return cross_val_nn(
@@ -826,6 +829,7 @@ def run_workflow(
             start_time = time.time()
 
             if is_nn:
+                from tensorflow.keras import backend as K
                 K.clear_session()
                 final_model = create_nn(
                     **best_params,
