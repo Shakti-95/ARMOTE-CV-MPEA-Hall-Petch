@@ -24,13 +24,25 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from sklearn.linear_model import LinearRegression, BayesianRidge
+from sklearn.linear_model import LinearRegression, BayesianRidge, Ridge, Lasso, ElasticNet, RidgeCV
 from sklearn.svm import SVR
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern, RationalQuadratic
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import (
+    RandomForestRegressor,
+    ExtraTreesRegressor,
+    GradientBoostingRegressor,
+    StackingRegressor,
+)
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.neural_network import MLPRegressor
+from sklearn.decomposition import PCA
+from sklearn.dummy import DummyRegressor
+from sklearn.pipeline import Pipeline
 from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from catboost import CatBoostRegressor
 
 try:
     from armote_cv import run_workflow
@@ -77,6 +89,30 @@ ALL_MODELS = {
     "XGBoost": XGBRegressor(random_state=42, n_jobs=-1),
     "GPR": GaussianProcessRegressor(random_state=42, n_restarts_optimizer=9),
     "NNR": None,
+    "Ridge": Ridge(random_state=42),
+    "Lasso": Lasso(max_iter=10000, random_state=42),
+    "ElasticNet": ElasticNet(max_iter=10000, random_state=42),
+    "KernelRidge": KernelRidge(kernel="rbf"),
+    "ExtraTrees": ExtraTreesRegressor(random_state=42, n_jobs=-1),
+    "GradientBoosting": GradientBoostingRegressor(random_state=42),
+    "LightGBM": LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1),
+    "CatBoost": CatBoostRegressor(random_state=42, verbose=0, allow_writing_files=False),
+    # Fixed settings, matching Hall-Petch-Modeling/scripts/04_family4_nonlinear_ml/fair_comparison.py
+    "MLP": MLPRegressor(
+        hidden_layer_sizes=(64, 32), max_iter=2000, early_stopping=True, random_state=42
+    ),
+    "PCA_OLS": Pipeline(
+        [("pca", PCA(n_components=6, random_state=42)), ("ols", LinearRegression())]
+    ),
+    "Dummy": DummyRegressor(strategy="mean"),
+    "Stacking": StackingRegressor(
+        estimators=[
+            ("rf", RandomForestRegressor(random_state=42)),
+            ("xgb", XGBRegressor(random_state=42, n_jobs=-1)),
+            ("lgbm", LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1)),
+        ],
+        final_estimator=RidgeCV(alphas=np.logspace(-3, 3, 20)),
+    ),
 }
 
 # ── GPR kernel map ─────────────────────────────────────────────────────────────
@@ -136,6 +172,52 @@ param_spaces = {
         "activation": ("categorical", ["relu", "tanh", "selu"]),
         "learning_rate": ("float", 1e-5, 1e-2, "log"),
     },
+    "Ridge": {
+        "alpha": ("float", 1e-3, 1e3, "log"),
+    },
+    "Lasso": {
+        "alpha": ("float", 1e-4, 10.0, "log"),
+    },
+    "ElasticNet": {
+        "alpha": ("float", 1e-4, 10.0, "log"),
+        "l1_ratio": ("float", 0.05, 0.95),
+    },
+    "KernelRidge": {
+        "alpha": ("float", 1e-3, 10.0, "log"),
+        "gamma": ("float", 1e-4, 1.0, "log"),
+    },
+    "ExtraTrees": {
+        "n_estimators": ("int", 50, 400),
+        "max_depth": ("int", 5, 50),
+        "min_samples_split": ("int", 2, 20),
+        "min_samples_leaf": ("int", 1, 10),
+    },
+    "GradientBoosting": {
+        "n_estimators": ("int", 50, 400),
+        "learning_rate": ("float", 0.01, 0.3, "log"),
+        "max_depth": ("int", 2, 8),
+        "subsample": ("float", 0.6, 1.0),
+    },
+    "LightGBM": {
+        "n_estimators": ("int", 50, 700),
+        "max_depth": ("int", 2, 6),
+        "learning_rate": ("float", 0.005, 0.2, "log"),
+        "num_leaves": ("int", 7, 63),
+        "min_child_samples": ("int", 5, 30),
+        "subsample": ("float", 0.5, 1.0),
+        "colsample_bytree": ("float", 0.3, 1.0),
+    },
+    "CatBoost": {
+        "iterations": ("int", 50, 500),
+        "depth": ("int", 3, 10),
+        "learning_rate": ("float", 0.01, 0.3, "log"),
+        "l2_leaf_reg": ("float", 1.0, 10.0, "log"),
+    },
+    # Fixed (no Optuna search), matching the companion repo's zero-tuning design
+    "MLP": {},
+    "PCA_OLS": {},
+    "Dummy": {},
+    "Stacking": {},
 }
 
 # ── CLI argument parsing ───────────────────────────────────────────────────────
@@ -239,12 +321,18 @@ for feat_name, feat_cols in feature_sets.items():
         X = subset[feat_cols]
         y = subset[target_name].values
 
+        # PCA_OLS(6) needs >= 6 input features (matches Hall-Petch-Modeling's own guard)
+        models_this_run = dict(models_to_run)
+        if "PCA_OLS" in models_this_run and len(feat_cols) < 6:
+            print(f"Skipping PCA_OLS: {feat_name} has {len(feat_cols)} features (< 6 required)")
+            del models_this_run["PCA_OLS"]
+
         output_folder = f"{feat_name}_{target_name}_Results_{args.cv}_Fold_CV"
 
         run_workflow(
             X,
             y,
-            models_to_run,
+            models_this_run,
             param_spaces,
             cv=args.cv,
             output_name=target_name,

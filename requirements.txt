@@ -8,3 +8,5 @@ optuna==4.5.0
 tensorflow==2.10.1
 tqdm==4.67.1
 xgboost==3.0.4
+lightgbm==4.5.0
+catboost==1.2.7
