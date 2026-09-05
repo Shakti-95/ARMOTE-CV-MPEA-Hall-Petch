@@ -525,7 +525,7 @@ def find_best_hyperparameters(
                     **{f"model__{k}": v for k, v in resolved_params.items()}
                 )
                 scores = cross_validate(
-                    pipe, X, y.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=-1
+                    pipe, X, y.ravel(), cv=cv_splitter, scoring=scoring, n_jobs=1
                 )
             else:
                 model_clone = copy.deepcopy(model)
@@ -536,7 +536,7 @@ def find_best_hyperparameters(
                     y_scaled.ravel(),
                     cv=cv_splitter,
                     scoring=scoring,
-                    n_jobs=-1,
+                    n_jobs=1,
                 )
             return -np.mean(scores["test_neg_mse"]), np.mean(scores["test_r2"])
 
