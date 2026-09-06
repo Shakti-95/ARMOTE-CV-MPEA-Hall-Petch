@@ -97,7 +97,11 @@ ALL_MODELS = {
     "GradientBoosting": GradientBoostingRegressor(random_state=42),
     "LightGBM": LGBMRegressor(random_state=42, n_jobs=1, verbose=-1),
     "CatBoost": CatBoostRegressor(
-        random_state=42, verbose=0, allow_writing_files=False, thread_count=1
+        random_state=42,
+        verbose=0,
+        allow_writing_files=False,
+        thread_count=1,
+        task_type="CPU",
     ),
     # Fixed settings, matching Hall-Petch-Modeling/scripts/04_family4_nonlinear_ml/fair_comparison.py
     "MLP": MLPRegressor(
