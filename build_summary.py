@@ -43,6 +43,7 @@ BIC_K = {
     "Lasso": lambda n_feat: n_feat + 1,
     "ElasticNet": lambda n_feat: n_feat + 1,
     "PCA_OLS": lambda n_feat: 6 + 1,  # 6 PCA components + intercept
+    "Dummy": lambda n_feat: 1,  # predicts the mean only
 }
 
 
@@ -60,7 +61,10 @@ def n_feat_for(feat_name, manifest):
 
 
 def find_csv(feat_name, target_name, protocol_dir_glob):
-    pattern = os.path.join(f"{feat_name}_{target_name}_Results_{protocol_dir_glob}", "*_results_*_fold_CV.csv")
+    pattern = os.path.join(
+        f"{feat_name}_{target_name}_Results_{protocol_dir_glob}",
+        "*_results_*_fold_CV.csv",
+    )
     matches = glob.glob(pattern)
     if not matches:
         return None
@@ -72,7 +76,9 @@ def find_csv(feat_name, target_name, protocol_dir_glob):
 def load_protocol(feat_name, target_name, protocol_dir_glob):
     path = find_csv(feat_name, target_name, protocol_dir_glob)
     if path is None:
-        print(f"  Skipping {protocol_dir_glob}: no results yet for {feat_name}/{target_name}")
+        print(
+            f"  Skipping {protocol_dir_glob}: no results yet for {feat_name}/{target_name}"
+        )
         return {}
     df = pd.read_csv(path)
     out = {}
@@ -108,7 +114,9 @@ def n_samples_for_loo(feat_name, target_name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default=os.path.join("results", "armote_cv_summary.csv"))
+    parser.add_argument(
+        "--out", default=os.path.join("results", "armote_cv_summary.csv")
+    )
     args = parser.parse_args()
 
     manifest = pd.read_csv(os.path.join("data", "inputs_feature_manifest.csv"))
@@ -143,7 +151,9 @@ def main():
                         "LOBO_R2": rb["R2"] if rb else np.nan,
                         "LOBO_RMSE": np.sqrt(rb["MSE"]) if rb else np.nan,
                         "BIC": bic(model_name, n_feat, rl, n_samples),
-                        "HPO": "none" if model_name in NO_TUNE_MODELS else "optuna-nested",
+                        "HPO": "none"
+                        if model_name in NO_TUNE_MODELS
+                        else "optuna-nested-50",
                     }
                 )
 
