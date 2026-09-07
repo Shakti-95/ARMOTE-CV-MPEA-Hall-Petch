@@ -1,4 +1,15 @@
-# ARMOTE-CV-HEA
+# ARMOTE-CV-MPEA-Hall-Petch
+
+Companion code repository for:
+
+> **Mulukutla, M., Padhy, S. P., Xu, W., Sahu, B. P., Kundu, J., Shunmugasamy, V. C., Allaire, D., Karaman, I., & Arróyave, R.**
+> *Revisiting Hall–Petch strengthening in FCC multi-principal element alloys: what grain size, composition, and processing can and cannot explain.* (2026, in preparation)
+
+This repository implements **ARMOTE-CV** and serves as **Family 4 ("Non-linear estimators")** of the paper's five-family validation framework (Classical Hall–Petch → Physics-derived descriptors → Composition/processing → Non-linear estimators → Symbolic regression). Family 4 tests whether non-linear and ensemble ML models improve on linear controls when every model sees the identical S1–S4 feature ladder and validation splits (5-fold CV, LOO, LOBO). Twenty estimators are compared — fifteen tuned via nested multi-objective Optuna search, five run at fixed settings — and the paper's conclusion is that **non-linearity shows no demonstrated advantage over the linear controls when inputs are matched**. Results from this repository feed into the paper's main companion repository, [Hall-Petch-Modeling](https://github.com/mrinalinimulukutla/Hall-Petch-Modeling), where it is included as a git submodule.
+
+> See the [**Citation**](#citation) section below for how to cite the code (GitHub / Zenodo) and the paper.
+
+---
 
 **ARMOTE-CV** (Automated Regression with Multi-Objective Tuning and Evaluation via Cross-Validation) is a nested cross-validation engine for regression with automated multi-objective hyperparameter optimization.
 
@@ -11,7 +22,17 @@ It is designed so that hyperparameter tuning and model evaluation are fully deco
 3. Retrains the winning configuration on the full outer training split.
 4. Evaluates on the held-out outer test fold and aggregates metrics across all folds.
 
-**Models supported out of the box:** Linear Regression, Bayesian Ridge, SVR, Decision Tree, Random Forest, XGBoost, Gaussian Process Regressor (GPR), Neural Network Regressor (NNR).
+**Models supported out of the box** (20 total):
+
+| Family | Models |
+|---|---|
+| Linear | Linear Regression, Ridge, Lasso, ElasticNet, Bayesian Ridge, PCA-OLS(6) |
+| Kernel / SVM | SVR (RBF), Kernel Ridge (RBF) |
+| Tree / ensemble / boosting | Decision Tree, Random Forest, Extra Trees, Gradient Boosting, XGBoost, LightGBM, CatBoost |
+| Probabilistic / neural | Gaussian Process Regressor (GPR), Neural Network Regressor (NNR, Keras), MLP (scikit-learn) |
+| Baseline / ensemble | Dummy (mean), Stacking (RF + XGBoost + LightGBM → RidgeCV) |
+
+Most models are tuned per outer fold via Optuna. `MLP`, `PCA_OLS`, `Dummy`, and `Stacking` use fixed settings instead (no hyperparameter search), matching a zero-tuning-budget design used for cross-repo comparison.
 
 ---
 
@@ -141,6 +162,19 @@ python run_loo.py --models LinearRegression BayesianRidge SVR DecisionTree Rando
 
 ---
 
+## Summarizing Results
+
+Each run writes its own `{S1..S4}_{YS|HV}_Results_{protocol}/*.csv`, one per feature set × target × protocol. `build_summary.py` collapses all of these (whatever is currently on disk — no re-run) into a single table:
+
+```bash
+python build_summary.py                          # writes results/armote_cv_summary.csv
+python build_summary.py --out results/custom.csv  # different output path
+```
+
+Output schema: `Target, FeatureSet, Model, n_feat, R2_5fold, RMSE_5fold, LOO_R2, LOO_RMSE, LOBO_R2, LOBO_RMSE, BIC, HPO`. `BIC` is populated only for models with a well-defined analytic parameter count (`LinearRegression`, `Ridge`, `Lasso`, `ElasticNet`, `PCA_OLS`, `Dummy`) using the pooled LOO out-of-fold MSE; it's left blank for every non-parametric model (trees, kernels, boosting, neural nets), where no standard parameter count exists.
+
+---
+
 ## CLI Reference
 
 ### All three scripts share these flags
@@ -149,7 +183,7 @@ python run_loo.py --models LinearRegression BayesianRidge SVR DecisionTree Rando
 |----------|---------|-------------|
 | `-f`, `--feature-sets` | all (S1–S4) | Feature sets to run |
 | `-t`, `--targets` | `YS HV` | Target properties |
-| `-m`, `--models` | all 8 | Models to run |
+| `-m`, `--models` | all 20 | Models to run |
 | `--n-trials` | `50` | Optuna trials per inner fold |
 | `--overwrite` | off | Replace existing output CSV |
 | `--append` | off | Append missing models to existing CSV |
@@ -242,15 +276,35 @@ param_spaces = {
 
 ## Citation
 
-A paper describing this work is currently under preparation. If you use this code or dataset in the meantime, please cite this repository:
+If you use this code or dataset, please cite the repository and/or the paper it supports.
+
+**Software (this repository, GitHub):**
 
 ```
-Padhy, S. P. (2026). ARMOTE-CV-HEA: Automated Regression with Multi-Objective Tuning
-and Evaluation via Cross-Validation applied to HEA property prediction. GitHub.
-https://github.com/Shakti-95/ARMOTE-CV-HEA
+Padhy, S. P. (2026). ARMOTE-CV-MPEA-Hall-Petch: Automated Regression with
+Multi-Objective Tuning and Evaluation via Cross-Validation applied to HEA
+property prediction. GitHub. https://github.com/Shakti-95/ARMOTE-CV-MPEA-Hall-Petch
 ```
 
-This section will be updated with the full journal citation and DOI upon publication.
+**Software (archived release, Zenodo):**
+
+```
+Padhy, S. P. (2026). ARMOTE-CV-MPEA-Hall-Petch (Version vX.Y.Z) [Software].
+Zenodo. https://doi.org/10.5281/zenodo.XXXXXXX
+```
+
+*DOI to be added once this repository is archived on Zenodo — currently a placeholder.*
+
+**Journal article** (this repository is used as Family 4 in):
+
+```
+Mulukutla, M., Padhy, S. P., Xu, W., Sahu, B. P., Kundu, J., Shunmugasamy, V. C.,
+Allaire, D., Karaman, I., & Arróyave, R. (2026). Revisiting Hall–Petch strengthening
+in FCC multi-principal element alloys: what grain size, composition, and processing
+can and cannot explain. Manuscript in preparation.
+```
+
+This section will be updated with the Zenodo DOI and full journal citation (volume, DOI) upon archival and publication.
 
 ---
 
@@ -261,11 +315,14 @@ This section will be updated with the full journal citation and DOI upon publica
 ├── run_5fold.py                       # Entry point: 5-fold KFold CV
 ├── run_loo.py                         # Entry point: Leave-One-Out CV
 ├── run_lobo.py                        # Entry point: Leave-One-Batch-Out CV
+├── build_summary.py                   # Collapses per-run CSVs into one summary table (see below)
 ├── data/
 │   ├── inputs.csv                     # HEA dataset
 │   └── inputs_feature_manifest.csv    # Maps columns to feature blocks S1–S4
 ├── requirements.txt
 ├── LICENSE
+├── results/
+│   └── armote_cv_summary.csv          # One row per Target × FeatureSet × Model, all three protocols
 └── {S1..S4}_{YS|HV}_Results_{protocol}/   # Auto-generated per run
 ```
 
