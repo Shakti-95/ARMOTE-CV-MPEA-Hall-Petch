@@ -85,18 +85,24 @@ ALL_MODELS = {
     "BayesianRidge": BayesianRidge(),
     "SVR": SVR(),
     "DecisionTree": DecisionTreeRegressor(random_state=42),
-    "RandomForest": RandomForestRegressor(random_state=42),
-    "XGBoost": XGBRegressor(random_state=42, n_jobs=-1),
+    "RandomForest": RandomForestRegressor(random_state=42, n_jobs=1),
+    "XGBoost": XGBRegressor(random_state=42, n_jobs=1),
     "GPR": GaussianProcessRegressor(random_state=42, n_restarts_optimizer=9),
     "NNR": None,
     "Ridge": Ridge(random_state=42),
     "Lasso": Lasso(max_iter=10000, random_state=42),
     "ElasticNet": ElasticNet(max_iter=10000, random_state=42),
     "KernelRidge": KernelRidge(kernel="rbf"),
-    "ExtraTrees": ExtraTreesRegressor(random_state=42, n_jobs=-1),
+    "ExtraTrees": ExtraTreesRegressor(random_state=42, n_jobs=1),
     "GradientBoosting": GradientBoostingRegressor(random_state=42),
-    "LightGBM": LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1),
-    "CatBoost": CatBoostRegressor(random_state=42, verbose=0, allow_writing_files=False),
+    "LightGBM": LGBMRegressor(random_state=42, n_jobs=1, verbose=-1),
+    "CatBoost": CatBoostRegressor(
+        random_state=42,
+        verbose=0,
+        allow_writing_files=False,
+        thread_count=1,
+        task_type="CPU",
+    ),
     # Fixed settings, matching Hall-Petch-Modeling/scripts/04_family4_nonlinear_ml/fair_comparison.py
     "MLP": MLPRegressor(
         hidden_layer_sizes=(64, 32), max_iter=2000, early_stopping=True, random_state=42
@@ -105,13 +111,18 @@ ALL_MODELS = {
         [("pca", PCA(n_components=6, random_state=42)), ("ols", LinearRegression())]
     ),
     "Dummy": DummyRegressor(strategy="mean"),
+    # All parallelism lives at the Optuna trial level (armote_cv.py's outer
+    # study.optimize(n_jobs=-1)); every model/CV layer below it is forced to
+    # n_jobs=1 / thread_count=1 to avoid oversubscribing cores (was Optuna
+    # trials x inner-CV folds x per-model threads, all at -1).
     "Stacking": StackingRegressor(
         estimators=[
-            ("rf", RandomForestRegressor(random_state=42)),
-            ("xgb", XGBRegressor(random_state=42, n_jobs=-1)),
-            ("lgbm", LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1)),
+            ("rf", RandomForestRegressor(random_state=42, n_jobs=1)),
+            ("xgb", XGBRegressor(random_state=42, n_jobs=1)),
+            ("lgbm", LGBMRegressor(random_state=42, n_jobs=1, verbose=-1)),
         ],
         final_estimator=RidgeCV(alphas=np.logspace(-3, 3, 20)),
+        n_jobs=1,
     ),
 }
 
