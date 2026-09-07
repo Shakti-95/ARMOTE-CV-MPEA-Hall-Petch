@@ -43,7 +43,6 @@ BIC_K = {
     "Lasso": lambda n_feat: n_feat + 1,
     "ElasticNet": lambda n_feat: n_feat + 1,
     "PCA_OLS": lambda n_feat: 6 + 1,  # 6 PCA components + intercept
-    "Dummy": lambda n_feat: 1,  # predicts the mean only
 }
 
 
